@@ -5,13 +5,6 @@ from aws_cdk import (
     aws_autoscaling as autoscaling,
     aws_cloudwatch as cloudwatch,
     aws_cloudwatch_actions as cw_actions,
-    aws_sns as sns,
-    aws_sns_subscriptions as sns_subscriptions,
-    aws_chatbot as chatbot,
-    aws_events as events,
-    aws_events_targets as events_targets,
-    aws_lambda as lambda_,
-    aws_kms as kms,
     Duration,
     RemovalPolicy,
 )
@@ -21,7 +14,6 @@ from cdk_nag import NagSuppressions
 
 class AsgConstruct(Construct):
     auto_scaling_group: autoscaling.AutoScalingGroup
-    asg_events_topic: sns.Topic
 
     def __init__(
             self,
@@ -30,21 +22,33 @@ class AsgConstruct(Construct):
             vpc: ec2.Vpc,
             use_spot: bool,
             spot_price: str,
-            instance_types: list,
             auto_scale_down: bool,
             schedule_auto_scaling: bool,
             timezone: str,
+            ecs_cluster_name: str,
             schedule_scale_down: str,
             schedule_scale_up: str,
-            slack_workspace_id: str = None,
-            slack_channel_id: str = None,
+            instance_type: str, 
+            desired_capacity: int = 1,
+            min_capacity: int = 0,
+            max_capacity: int = 1,        
+            launch_template_id: str = None,   # <-- default None
+            auto_scaling_group_id: str = "ASG",
             **kwargs) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
+        # Set unique IDs based on construct_id if not provided
+        if launch_template_id is None:
+            launch_template_id = f"{construct_id}LaunchTemplate"
+    
+        if auto_scaling_group_id is None:
+            auto_scaling_group_id = f"{construct_id}AutoScalingGroup"
+        
+
         # Create Auto Scaling Group Security Group
         asg_security_group = ec2.SecurityGroup(
-            scope,
-            "AsgSecurityGroup",
+            self,
+            f"{construct_id}SecurityGroup", 
             vpc=vpc,
             description="Security Group for ASG",
             allow_all_outbound=True,
@@ -52,30 +56,49 @@ class AsgConstruct(Construct):
 
         # EC2 Role for AWS internal use (if necessary)
         ec2_role = iam.Role(
-            scope,
-            "EC2Role",
+            self,
+            f"{construct_id}Role", 
             assumed_by=iam.ServicePrincipal("ec2.amazonaws.com"),
             managed_policies=[
                 iam.ManagedPolicy.from_aws_managed_policy_name(
                     "AmazonEC2FullAccess"),  # check if less privilege can be given
                 iam.ManagedPolicy.from_aws_managed_policy_name(
-                    "AmazonSSMManagedEC2InstanceDefaultPolicy")
+                    "AmazonSSMManagedInstanceCore"),
             ]
         )
 
+        # Attach an inline policy equivalent to AmazonEC2ContainerServiceforEC2Role
+        ec2_role.add_to_policy(iam.PolicyStatement(
+            actions=[
+                "ecs:RegisterContainerInstance",
+                "ecs:DeregisterContainerInstance",
+                "ecs:DiscoverPollEndpoint",
+                "ecs:Submit*",
+                "ecs:Poll",
+                "ecs:StartTelemetrySession",
+                "ecr:GetAuthorizationToken",
+                "ecr:BatchCheckLayerAvailability",
+                "ecr:GetDownloadUrlForLayer",
+                "ecr:BatchGetImage",
+                "logs:CreateLogStream",
+                "logs:PutLogEvents",
+            ],
+            resources=["*"]
+        ))        
+
         user_data_script = ec2.UserData.for_linux()
-        user_data_script.add_commands("""
-            #!/bin/bash
-            REGION=$(curl -s http://169.254.169.254/latest/meta-data/placement/region) 
-            docker plugin install public.ecr.aws/j1l5j1d1/rexray-ebs --grant-all-permissions REXRAY_PREEMPT=true EBS_REGION=$REGION
-            systemctl restart docker
+        user_data_script.add_commands(f"""#!/bin/bash
+        echo ECS_CLUSTER={ecs_cluster_name} >> /etc/ecs/ecs.config
+        REGION=$(curl -s http://169.254.169.254/latest/meta-data/placement/region)
+        docker plugin install public.ecr.aws/j1l5j1d1/rexray-ebs --grant-all-permissions REXRAY_PREEMPT=true EBS_REGION=$REGION
+        systemctl restart docker
         """)
 
-        # Create an Auto Scaling Group with two EBS volumes
+        # Create an Auto Scaling Group
         launchTemplate = ec2.LaunchTemplate(
-            scope,
-            "Host",
-            machine_image=ecs.EcsOptimizedImage.amazon_linux2(
+            self,
+            launch_template_id,
+            machine_image=ecs.EcsOptimizedImage.amazon_linux2023(
                 hardware_type=ecs.AmiHardwareType.GPU
             ),
             role=ec2_role,
@@ -84,23 +107,19 @@ class AsgConstruct(Construct):
             block_devices=[
                 ec2.BlockDevice(
                     device_name="/dev/xvda",
-                    volume=ec2.BlockDeviceVolume.ebs(volume_size=50,
+                    volume=ec2.BlockDeviceVolume.ebs(volume_size=200,
                                                      encrypted=True)
                 )
             ],
         )
-        
-        # Create launch template overrides from instance types list
-        launch_template_overrides = [
-            autoscaling.LaunchTemplateOverrides(
-                instance_type=ec2.InstanceType(instance_type)
-            ) for instance_type in instance_types
-        ]
-        
+
         auto_scaling_group = autoscaling.AutoScalingGroup(
-            scope,
-            "ASG",
+            self,
+            auto_scaling_group_id,
             vpc=vpc,
+            vpc_subnets=ec2.SubnetSelection(
+                subnets=[vpc.private_subnets[0]]  # Only one subnet = single AZ
+            ),
             # Use Mixed Instance Policy to increase availability in case capacity is not available.
             mixed_instances_policy=autoscaling.MixedInstancesPolicy(
                 instances_distribution=autoscaling.InstancesDistribution(
@@ -112,11 +131,15 @@ class AsgConstruct(Construct):
                     spot_max_price=spot_price,
                 ),
                 launch_template=launchTemplate,
-                launch_template_overrides=launch_template_overrides,
+                launch_template_overrides=[
+                    autoscaling.LaunchTemplateOverrides(
+                        instance_type=ec2.InstanceType(instance_type)
+                    ),
+                ],                
             ),
-            min_capacity=0,
-            max_capacity=1,
-            desired_capacity=1,
+            min_capacity=min_capacity,
+            max_capacity=max_capacity,
+            desired_capacity=desired_capacity,
             new_instances_protected_from_scale_in=False,
         )
 
@@ -137,7 +160,7 @@ class AsgConstruct(Construct):
             # create a CloudWatch alarm to track the CPU utilization
             cpu_alarm = cloudwatch.Alarm(
                 scope,
-                "CPUUtilizationAlarm",
+                f"{construct_id}CPUUtilizationAlarm", 
                 metric=cpu_utilization_metric,
                 threshold=1,
                 evaluation_periods=60,
@@ -146,7 +169,7 @@ class AsgConstruct(Construct):
             )
             scaling_action = autoscaling.StepScalingAction(
                 scope,
-                "ScalingAction",
+                f"{construct_id}ScalingAction", 
                 auto_scaling_group=auto_scaling_group,
                 adjustment_type=autoscaling.AdjustmentType.CHANGE_IN_CAPACITY,
                 cooldown=Duration.seconds(120)
@@ -165,7 +188,7 @@ class AsgConstruct(Construct):
             cpu_alarm.add_alarm_action(
                 cw_actions.AutoScalingAction(scaling_action)
             )
-
+        
         # Scheduled Scaling:
         # (default) set desired capacity to 0 after work hour and 1 on start of work hour (only mon-fri)
         # Use TZ identifier for timezone https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
@@ -173,7 +196,7 @@ class AsgConstruct(Construct):
             # Create a scheduled action to set the desired capacity to 0
             after_work_hours_action = autoscaling.ScheduledAction(
                 scope,
-                "AfterWorkHoursAction",
+                f"{construct_id}AfterWorkHoursAction", 
                 auto_scaling_group=auto_scaling_group,
                 desired_capacity=0,
                 time_zone=timezone,
@@ -182,64 +205,11 @@ class AsgConstruct(Construct):
             # Create a scheduled action to set the desired capacity to 1
             start_work_hours_action = autoscaling.ScheduledAction(
                 scope,
-                "StartWorkHoursAction",
+                f"{construct_id}StartWorkHoursAction", 
                 auto_scaling_group=auto_scaling_group,
                 desired_capacity=1,
                 time_zone=timezone,
                 schedule=autoscaling.Schedule.expression(schedule_scale_up)
-            )
-
-        # Notifications
-        # CloudWatch Monitoring and Slack Notifications for ASG
-        asg_events_topic = None
-        if slack_workspace_id and slack_channel_id:
-            # Create SNS Topic for ASG Scaling Events
-            asg_events_topic = sns.Topic(
-                self, "AsgEventsTopic",
-                display_name="ASG Scaling Events",
-                # master_key=kms.Alias.from_alias_name(
-                #     self, "Alias", "alias/aws/sns"),
-                enforce_ssl=True
-            )
-
-            # Create a Lambda function to monitor ASG activity and detect errors
-            asg_monitor_lambda = lambda_.Function(
-                self, "AsgMonitorLambda",
-                runtime=lambda_.Runtime.PYTHON_3_9,
-                handler="asg.handler",
-                code=lambda_.Code.from_asset(
-                    "./comfyui_aws_stack/lambda/monitor_lambda"),
-                environment={
-                    "ASG_NAME": auto_scaling_group.auto_scaling_group_name,
-                    "SNS_TOPIC_ARN": asg_events_topic.topic_arn
-                },
-                timeout=Duration.seconds(30)
-            )
-
-            # Grant permissions to the Lambda function
-            asg_events_topic.grant_publish(asg_monitor_lambda)
-            asg_monitor_lambda.add_to_role_policy(
-                iam.PolicyStatement(
-                    actions=["autoscaling:DescribeScalingActivities"],
-                    resources=["*"]
-                )
-            )
-
-            # ASGのイベントをトリガーにしてLambda関数を実行するルールを作成
-            events.Rule(
-                self, "AsgEventRule",
-                event_pattern=events.EventPattern(
-                    source=["aws.autoscaling"],
-                    detail_type=[
-                        "EC2 Instance Launch Unsuccessful",
-                        "EC2 Instance Terminate Unsuccessful",
-                        "EC2 Auto Scaling Instance Launch Error",
-                        "EC2 Auto Scaling Instance Terminate Error",
-                        "EC2 Auto Scaling Group Launch Error"
-                    ],
-                    resources=[auto_scaling_group.auto_scaling_group_arn]
-                ),
-                targets=[events_targets.LambdaFunction(asg_monitor_lambda)]
             )
 
         # Nag
@@ -275,20 +245,6 @@ class AsgConstruct(Construct):
             apply_to_children=True
         )
 
-        if asg_events_topic:
-            NagSuppressions.add_resource_suppressions(
-                [asg_events_topic],
-                suppressions=[
-                    {"id": "AwsSolutions-SNS2",
-                     "reason": "SNS topic is implicitly created by LifeCycleActions and is not critical for sample purposes."
-                     },
-                    {"id": "AwsSolutions-SNS3",
-                     "reason": "SNS topic is implicitly created by LifeCycleActions and is not critical for sample purposes."
-                     },
-                ],
-            )
-
         # Output
 
         self.auto_scaling_group = auto_scaling_group
-        self.asg_events_topic = asg_events_topic

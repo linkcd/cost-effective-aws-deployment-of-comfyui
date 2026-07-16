@@ -123,7 +123,7 @@ class AlbConstruct(Construct):
                     command=[
                         "bash",
                         "-c",
-                        "pip install -r requirements.txt -t /asset-output --platform manylinux_2_12_x86_64 --only-binary=:all: && cp -au . /asset-output",
+                        "pip install -r requirements.txt -t /asset-output --platform manylinux_2_12_x86_64 --only-binary=:all: && cp -ru . /asset-output",
                     ],
                     platform="linux/amd64",
                     network="sagemaker" if is_sagemaker_studio else None
@@ -173,8 +173,8 @@ class AlbConstruct(Construct):
                 scope, id="SelfSignedCert", certificate_arn=custom_resource.ref
             )
 
-        # WAF: ipv4 ipv6 restriction and rate limiting
-        if allowed_ip_v4_address_ranges or allowed_ip_v6_address_ranges or waf_rate_limit_enabled:
+        # WAF: ipv4 ipv6 restriction
+        if allowed_ip_v4_address_ranges or allowed_ip_v6_address_ranges:
             wafRules = []
             rule_priority = 1
 
@@ -295,6 +295,7 @@ class AlbConstruct(Construct):
                 web_acl_arn=waf.attr_arn,
             )
 
+
         # Output
 
         self.scope = scope
@@ -317,8 +318,8 @@ class AlbConstruct(Construct):
         scope = self.scope
         alb = self.alb
         certificate = self.certificate
-
-        # Add listener to the Load Balancer on port 443
+    
+        # Create HTTPS listener
         listener = alb.add_listener(
             "Listener",
             certificates=[certificate],
@@ -333,7 +334,7 @@ class AlbConstruct(Construct):
             "LambdaAdminRule",
             listener=listener,
             priority=5,
-            conditions=[elbv2.ListenerCondition.path_patterns(["/admin"])],
+            conditions=[elbv2.ListenerCondition.path_patterns(["/", "/admin"])],
             action=elb_actions.AuthenticateCognitoAction(
                 next=elbv2.ListenerAction.forward([lambda_admin_target_group]),
                 user_pool=user_pool,
@@ -416,7 +417,7 @@ class AlbConstruct(Construct):
                 user_pool_domain=user_pool_custom_domain,
             ),
             conditions=[elbv2.ListenerCondition.path_patterns(["/*"])]
-        )
+        )        
 
         # Nag
 

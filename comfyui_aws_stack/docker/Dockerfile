@@ -1,4 +1,4 @@
-FROM nvidia/cuda:12.9.0-runtime-ubuntu22.04
+FROM nvcr.io/nvidia/cuda:12.9.0-runtime-ubuntu22.04
 
 ENV DEBIAN_FRONTEND=noninteractive \
     TZ=America/Los_Angeles
@@ -33,7 +33,7 @@ RUN pyenv install $PYTHON_VERSION && \
 WORKDIR /home/user/opt/ComfyUI
 
 # Clone ComfyUI and ComfyUI-Manager
-RUN git clone --depth 1 https://github.com/comfyanonymous/ComfyUI . && \
+RUN git clone --depth 1 https://github.com/Comfy-Org/ComfyUI . && \
     mkdir -p custom_nodes/ComfyUI-Manager && \
     git clone --depth 1 https://github.com/ltdrdata/ComfyUI-Manager custom_nodes/ComfyUI-Manager
 
@@ -44,4 +44,4 @@ RUN pip install --no-cache-dir -r requirements.txt && \
 # Copy the configuration file
 COPY comfyui_config/extra_model_paths.yaml ./extra_model_paths.yaml
 
-CMD ["python", "/home/user/opt/ComfyUI/main.py", "--listen", "0.0.0.0", "--port", "8181", "--output-directory", "/home/user/opt/ComfyUI/output/"]
+CMD ["python", "/home/user/opt/ComfyUI/main.py", "--listen", "0.0.0.0", "--port", "8080", "--output-directory", "/home/user/opt/ComfyUI/output/"]

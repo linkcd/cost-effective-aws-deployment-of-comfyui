@@ -1,6 +1,8 @@
 from aws_cdk import (
     Stack,
-    CfnOutput
+    CfnOutput,
+    aws_ecs as ecs,
+    aws_servicediscovery as servicediscovery, 
 )
 from constructs import Construct
 
@@ -10,15 +12,10 @@ from comfyui_aws_stack.construct.asg_construct import AsgConstruct
 from comfyui_aws_stack.construct.ecs_construct import EcsConstruct
 from comfyui_aws_stack.construct.admin_construct import AdminConstruct
 from comfyui_aws_stack.construct.auth_construct import AuthConstruct
-from aws_cdk import (
-    aws_chatbot as chatbot,
-    aws_iam as iam
-)
 
 import os
 import hashlib
 from typing import List
-
 
 class ComfyUIStack(Stack):
 
@@ -30,8 +27,6 @@ class ComfyUIStack(Stack):
                  # Spot
                  use_spot: bool = True,
                  spot_price: str = "0.752",
-                 # Instance Types
-                 instance_types: List[str] = ["g4dn.xlarge", "g5.xlarge", "g6.xlarge"],
                  # Auto Scaling
                  auto_scale_down: bool = True,
                  schedule_auto_scaling: bool = False,
@@ -54,9 +49,8 @@ class ComfyUIStack(Stack):
                  host_name: str = None,
                  domain_name: str = None,
                  hosted_zone_id: str = None,
-                 # Slack
-                 slack_workspace_id: str = None,
-                 slack_channel_id: str = None,
+                 enable_comfyui: bool = True,
+                 comfyui_instance_type: str = "g6e.2xlarge",               
                  **kwargs) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
@@ -76,6 +70,17 @@ class ComfyUIStack(Stack):
             self, "VpcConstruct",
             cheap_vpc=cheap_vpc
         )
+        # After vpc_construct
+        ecs_cluster = ecs.Cluster(
+            self,
+            "EcsCluster",
+            vpc=vpc_construct.vpc,
+            container_insights=True,
+            default_cloud_map_namespace=ecs.CloudMapNamespaceOptions(
+                name="local",
+                type=servicediscovery.NamespaceType.DNS_PRIVATE,
+            ),
+        )  
 
         # ALB
 
@@ -105,95 +110,74 @@ class ComfyUIStack(Stack):
             self_sign_up_enabled=self_sign_up_enabled,
             mfa_required=mfa_required,
             allowed_sign_up_email_domains=allowed_sign_up_email_domains,
-        )
+        )        
 
-        # ASG
-
-        asg_construct = AsgConstruct(
-            self, "AsgConstruct",
-            vpc=vpc_construct.vpc,
-            use_spot=use_spot,
-            spot_price=spot_price,
-            instance_types=instance_types,
-            auto_scale_down=auto_scale_down,
-            schedule_auto_scaling=schedule_auto_scaling,
-            timezone=timezone,
-            schedule_scale_down=schedule_scale_down,
-            schedule_scale_up=schedule_scale_up,
-            slack_workspace_id=slack_workspace_id,
-            slack_channel_id=slack_channel_id,
-        )
+        # === ASG for ComfyUI ===
+        asg_comfy = None
+        if enable_comfyui:
+            asg_comfy = AsgConstruct(
+                self,
+                construct_id="ComfyUIAsg",
+                vpc=vpc_construct.vpc,
+                ecs_cluster_name=ecs_cluster.cluster_name, 
+                use_spot=use_spot,
+                spot_price=spot_price,
+                auto_scale_down=auto_scale_down,
+                schedule_auto_scaling=schedule_auto_scaling,
+                timezone=timezone,
+                schedule_scale_down=schedule_scale_down,
+                schedule_scale_up=schedule_scale_up,
+                instance_type=comfyui_instance_type,
+                desired_capacity=1,
+            )
 
         # ECS
 
-        ecs_construct = EcsConstruct(
-            self, "EcsConstruct",
-            vpc=vpc_construct.vpc,
-            auto_scaling_group=asg_construct.auto_scaling_group,
-            alb_security_group=alb_construct.alb_security_group,
-            is_sagemaker_studio=is_sagemaker_studio,
-            suffix=suffix,
-            region=region,
-            user_pool=auth_construct.user_pool,
-            user_pool_client=auth_construct.user_pool_client,
-            instance_types=instance_types,
-            slack_workspace_id=slack_workspace_id,
-            slack_channel_id=slack_channel_id,
-        )
+        if enable_comfyui:
+            ecs_construct = EcsConstruct(
+                self, "EcsConstruct",
+                vpc=vpc_construct.vpc,
+                comfy_asg=asg_comfy.auto_scaling_group,
+                alb_security_group=alb_construct.alb_security_group,
+                is_sagemaker_studio=is_sagemaker_studio,
+                suffix=suffix,
+                region=region,
+                user_pool=auth_construct.user_pool,
+                user_pool_client=auth_construct.user_pool_client,
+                cluster=ecs_cluster, 
+            )
+        else:
+            raise ValueError("ComfyUI must be enabled for ECS deployment.")
 
-        # Slack
-
-        if slack_workspace_id and slack_channel_id:
-            slack_channel = chatbot.SlackChannelConfiguration(
-                self, "SlackChannel",
-                slack_channel_configuration_name="TestChannel",
-                slack_workspace_id=slack_workspace_id,
-                slack_channel_id=slack_channel_id,
-                notification_topics=[
-                    asg_construct.asg_events_topic, ecs_construct.ecs_health_topic]
-            )
-            slack_channel.role.add_managed_policy(
-                iam.ManagedPolicy.from_aws_managed_policy_name(
-                    "CloudWatchReadOnlyAccess"
-                )
-            )
-            slack_channel.role.add_managed_policy(
-                iam.ManagedPolicy.from_aws_managed_policy_name(
-                    "AmazonQFullAccess"
-                )
-            )
 
         # Admin Lambda
 
-        admin_construct = AdminConstruct(
-            self, "AdminConstruct",
-            vpc=vpc_construct.vpc,
-            cluster=ecs_construct.cluster,
-            service=ecs_construct.service,
-            auto_scaling_group=asg_construct.auto_scaling_group,
-            user_pool_logout_url=auth_construct.user_pool_logout_url,
-        )
-
-        # Associate resources to ALB
-
-        alb_construct.associate_resources(
-            ecs_target_group=ecs_construct.ecs_target_group,
-            lambda_admin_target_group=admin_construct.lambda_admin_target_group,
-            lambda_restart_docker_target_group=admin_construct.lambda_restart_docker_target_group,
-            lambda_shutdown_target_group=admin_construct.lambda_shutdown_target_group,
-            lambda_scaleup_target_group=admin_construct.lambda_scaleup_target_group,
-            lambda_signout_target_group=admin_construct.lambda_signout_target_group,
-            user_pool=auth_construct.user_pool,
-            user_pool_client=auth_construct.user_pool_client,
-            user_pool_custom_domain=auth_construct.user_pool_custom_domain,
-        )
-
-        # Add env variables to lambda
-
-        admin_construct.add_environments(
-            lambda_admin_rule=alb_construct.lambda_admin_rule,
-        )
-
+        if enable_comfyui:
+            admin_construct = AdminConstruct(
+                self, "AdminConstruct",
+                vpc=vpc_construct.vpc,
+                cluster=ecs_construct.cluster,
+                service=ecs_construct.service,
+                auto_scaling_group=asg_comfy.auto_scaling_group,
+                user_pool_logout_url=auth_construct.user_pool_logout_url,
+            )
+        
+            alb_construct.associate_resources(
+                ecs_target_group=ecs_construct.ecs_target_group,
+                lambda_admin_target_group=admin_construct.lambda_admin_target_group,
+                lambda_restart_docker_target_group=admin_construct.lambda_restart_docker_target_group,
+                lambda_shutdown_target_group=admin_construct.lambda_shutdown_target_group,
+                lambda_scaleup_target_group=admin_construct.lambda_scaleup_target_group,
+                lambda_signout_target_group=admin_construct.lambda_signout_target_group,
+                user_pool=auth_construct.user_pool,
+                user_pool_client=auth_construct.user_pool_client,
+                user_pool_custom_domain=auth_construct.user_pool_custom_domain,
+            )
+        
+            admin_construct.add_environments(
+                lambda_admin_rule=alb_construct.lambda_admin_rule,
+            )
+            
         # Output
 
         CfnOutput(self, "Endpoint", value=auth_construct.application_dns_name)
@@ -201,3 +185,5 @@ class ComfyUIStack(Stack):
                   value=auth_construct.user_pool.user_pool_id)
         CfnOutput(self, "CognitoDomainName",
                   value=auth_construct.user_pool_custom_domain.domain_name)
+        CfnOutput(self, "ComfyUIASGName", value=asg_comfy.auto_scaling_group.auto_scaling_group_name)
+        CfnOutput(self, "ComfyUIS3Bucket", value=ecs_construct.comfyui_bucket.bucket_name)

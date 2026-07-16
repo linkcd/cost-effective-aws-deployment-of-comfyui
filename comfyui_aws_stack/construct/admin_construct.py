@@ -48,6 +48,7 @@ class AdminConstruct(Construct):
         lambda_role.add_to_policy(iam.PolicyStatement(
             actions=["ecs:DescribeServices",
                      "ecs:ListTasks",
+                     "ecs:ListServices",
                      "elasticloadbalancing:ModifyListener",
                      "elasticloadbalancing:ModifyRule",
                      "elasticloadbalancing:DescribeRules",
@@ -101,6 +102,7 @@ class AdminConstruct(Construct):
             timeout=Duration.seconds(amount=60),
             environment={
                 "ASG_NAME": auto_scaling_group.auto_scaling_group_name,
+                "ECS_CLUSTER_NAME": cluster.cluster_name,  # <-- Add this                
             }
         )
 
@@ -131,6 +133,8 @@ class AdminConstruct(Construct):
             timeout=Duration.seconds(amount=60),
             environment={
                 "ASG_NAME": auto_scaling_group.auto_scaling_group_name,
+                "ECS_CLUSTER_NAME": cluster.cluster_name,
+                "ECS_SERVICE_NAME": service.service_name
             }
         )
 
