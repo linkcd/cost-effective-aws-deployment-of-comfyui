@@ -9,6 +9,9 @@ from aws_cdk import (
     aws_autoscaling as autoscaling,
     aws_elasticloadbalancingv2 as elbv2,
     aws_s3 as s3,
+    aws_sns as sns,
+    aws_cloudwatch as cloudwatch,
+    aws_cloudwatch_actions as cloudwatch_actions,
     Duration,
     RemovalPolicy,
 )
@@ -21,6 +24,7 @@ class EcsConstruct(Construct):
     cluster: ecs.Cluster
     service: ecs.IService
     ecs_target_group: elbv2.ApplicationTargetGroup
+    ecs_health_topic: sns.Topic
 
     def __init__(
         self,
@@ -34,7 +38,9 @@ class EcsConstruct(Construct):
         region: str,
         user_pool: cognito.UserPool,
         user_pool_client: cognito.UserPoolClient,
-        cluster: ecs.Cluster, 
+        cluster: ecs.Cluster,
+        slack_workspace_id: str = None,
+        slack_channel_id: str = None,
         **kwargs,
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
@@ -141,7 +147,7 @@ class EcsConstruct(Construct):
             stop_timeout=Duration.seconds(90),
             logging=ecs.LogDriver.aws_logs(stream_prefix="comfy-ui", log_group=log_group),
             health_check=ecs.HealthCheck(
-                command=["CMD-SHELL", "curl -f http://localhost:8080/system_stats || exit 1"],
+                command=["CMD-SHELL", "curl -f http://localhost:8181/system_stats || exit 1"],
                 interval=Duration.seconds(15),
                 timeout=Duration.seconds(10),
                 retries=8,
@@ -167,7 +173,7 @@ class EcsConstruct(Construct):
         #     ecs.PortMapping(container_port=8181, host_port=8181, protocol=ecs.Protocol.TCP)
         # )
         comfy_container.add_port_mappings(
-            ecs.PortMapping(container_port=8080, host_port=8080, protocol=ecs.Protocol.TCP),
+            ecs.PortMapping(container_port=8181, host_port=8181, protocol=ecs.Protocol.TCP),
             ecs.PortMapping(container_port=8189, host_port=8189, protocol=ecs.Protocol.TCP),
             ecs.PortMapping(container_port=8190, host_port=8190, protocol=ecs.Protocol.TCP),
             ecs.PortMapping(container_port=8191, host_port=8191, protocol=ecs.Protocol.TCP),
@@ -182,7 +188,7 @@ class EcsConstruct(Construct):
         )
         comfy_sg.add_ingress_rule(
             ec2.Peer.security_group_id(alb_security_group.security_group_id),
-            ec2.Port.tcp(8080),
+            ec2.Port.tcp(8181),
             "Allow traffic to ComfyUI",
         )
 
@@ -226,19 +232,19 @@ class EcsConstruct(Construct):
         comfy_target_group = elbv2.ApplicationTargetGroup(
             self,
             f"{construct_id}EcsTargetGroup",
-            port=8080,
+            port=8181,
             vpc=vpc,
             protocol=elbv2.ApplicationProtocol.HTTP,
             target_type=elbv2.TargetType.IP,
             targets=[
                 comfy_service.load_balancer_target(
-                    container_name=comfy_container.container_name, container_port=8080
+                    container_name=comfy_container.container_name, container_port=8181
                 )
             ],
             health_check=elbv2.HealthCheck(
                 enabled=True,
                 path="/system_stats",
-                port="8080",
+                port="8181",
                 healthy_http_codes="200",
                 interval=Duration.seconds(30),
                 timeout=Duration.seconds(5),
@@ -275,7 +281,71 @@ class EcsConstruct(Construct):
             apply_to_children=True,
         )
 
-        # Fix: `auto_scaling_group` is undefined; suppressions likely for comfy_asg
+        # CloudWatch Monitoring and Slack Notifications
+        ecs_health_topic = None
+        if slack_workspace_id and slack_channel_id:
+            # Create SNS Topic for ECS Task Health Alerts
+            ecs_health_topic = sns.Topic(
+                self, f"{construct_id}EcsHealthTopic",
+                display_name="ECS Task Health Alerts",
+                enforce_ssl=True
+            )
+
+            # Monitor ECS Task Count using Container Insights
+            running_tasks_metric = cloudwatch.Metric(
+                namespace="ECS/ContainerInsights",
+                metric_name="RunningTaskCount",
+                dimensions_map={
+                    "ClusterName": cluster.cluster_name,
+                    "ServiceName": comfy_service.service_name
+                },
+                period=Duration.minutes(1)
+            )
+
+            # Alarm when task count is 0
+            no_running_tasks_alarm = cloudwatch.Alarm(
+                self, f"{construct_id}NoRunningTasksAlarm",
+                metric=running_tasks_metric,
+                evaluation_periods=3,
+                threshold=0,
+                comparison_operator=cloudwatch.ComparisonOperator.LESS_THAN_OR_EQUAL_TO_THRESHOLD,
+                alarm_description="Alert when there are no running tasks in the service",
+                treat_missing_data=cloudwatch.TreatMissingData.BREACHING
+            )
+
+            # Attach SNS topic to the alarm
+            no_running_tasks_alarm.add_alarm_action(
+                cloudwatch_actions.SnsAction(ecs_health_topic)
+            )
+
+            # Also monitor ALB target health
+            target_group_health_metric = cloudwatch.Metric(
+                namespace="AWS/ApplicationELB",
+                metric_name="UnHealthyHostCount",
+                dimensions_map={
+                    "TargetGroup": comfy_target_group.target_group_arn.split(":")[-1],
+                    "LoadBalancer": "app/ComfyUIALB"
+                },
+                period=Duration.minutes(1)
+            )
+
+            # Create alarm for unhealthy hosts
+            unhealthy_hosts_alarm = cloudwatch.Alarm(
+                self, f"{construct_id}UnhealthyHostsAlarm",
+                metric=target_group_health_metric,
+                evaluation_periods=3,
+                threshold=0,
+                comparison_operator=cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+                alarm_description="Alert when there are unhealthy hosts in the target group",
+                treat_missing_data=cloudwatch.TreatMissingData.NOT_BREACHING
+            )
+
+            # Add SNS action to the alarm
+            unhealthy_hosts_alarm.add_alarm_action(
+                cloudwatch_actions.SnsAction(ecs_health_topic)
+            )
+
+        # Nag
         NagSuppressions.add_resource_suppressions(
             [comfy_asg],
             suppressions=[
@@ -287,8 +357,22 @@ class EcsConstruct(Construct):
             apply_to_children=True,
         )
 
+        if ecs_health_topic:
+            NagSuppressions.add_resource_suppressions(
+                [ecs_health_topic],
+                suppressions=[
+                    {"id": "AwsSolutions-SNS2",
+                     "reason": "SNS topic is implicitly created by LifeCycleActions and is not critical for sample purposes."
+                     },
+                    {"id": "AwsSolutions-SNS3",
+                     "reason": "SNS topic is implicitly created by LifeCycleActions and is not critical for sample purposes."
+                     },
+                ],
+            )
+
         # Export class properties for external access
         self.cluster = cluster
         self.service = comfy_service
         self.ecs_target_group = comfy_target_group
         self.comfyui_bucket = comfyui_bucket
+        self.ecs_health_topic = ecs_health_topic

@@ -44,4 +44,4 @@ RUN pip install --no-cache-dir -r requirements.txt && \
 # Copy the configuration file
 COPY comfyui_config/extra_model_paths.yaml ./extra_model_paths.yaml
 
-CMD ["python", "/home/user/opt/ComfyUI/main.py", "--listen", "0.0.0.0", "--port", "8080", "--output-directory", "/home/user/opt/ComfyUI/output/"]
+CMD ["python", "/home/user/opt/ComfyUI/main.py", "--listen", "0.0.0.0", "--port", "8181", "--output-directory", "/home/user/opt/ComfyUI/output/"]
