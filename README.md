@@ -61,7 +61,7 @@ The following tools are required to deploy this solution locally:
 - **[AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html)** — For AWS account authentication and resource management
 - **[GNU Make](https://www.gnu.org/software/make/)** — Used for build automation (pre-installed on macOS/Linux; on Windows use WSL or install via chocolatey)
 
-> Docker is NOT required locally. All container builds happen in CodeBuild (AWS).
+> Docker is NOT required for the default (CodeBuild) deployment. If you prefer to deploy locally, Docker or Finch is required.
 
 If you do not have AWS CLI, follow [AWS CLI Install Guide](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html)
 
@@ -105,6 +105,22 @@ No local Docker or Finch is needed. All builds run in CodeBuild.
 | `make logs` | Print last 40 lines of build logs |
 | `make destroy` | Delete ComfyUI stack (keeps CodeBuild for redeployment) |
 | `make cleanup` | Delete everything (ComfyUI + CodeBuild) |
+
+#### Option B: Local deployment (requires Docker or Finch)
+
+If you prefer deploying directly from your machine:
+
+```bash
+export AWS_DEFAULT_REGION=us-west-2
+make local-bootstrap   # first time only
+make local-deploy
+```
+
+| Command | What it does |
+|---------|-------------|
+| `make local-bootstrap` | One-time: bootstrap CDK in your account |
+| `make local-deploy` | Deploy directly via `cdk deploy` (requires Docker) |
+| `make local-synth` | Synthesize the CloudFormation template locally |
 
 Depending on your custom_nodes and extenstions in the dockerfile, the deployment will take approx. 8-10 minutes to have ComfyUI ready
  

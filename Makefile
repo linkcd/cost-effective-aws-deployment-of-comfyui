@@ -5,7 +5,7 @@ setup:
 	@echo "Creating CodeBuild infrastructure..."
 	./scripts/run_codebuild.sh setup
 
-# --- Deploy via CodeBuild (runs entirely in AWS) ---
+# --- Deploy via CodeBuild (runs entirely in AWS, no local Docker) ---
 deploy:
 	./scripts/run_codebuild.sh deploy
 
@@ -17,6 +17,19 @@ status:
 
 logs:
 	./scripts/run_codebuild.sh logs
+
+# --- Local deploy (requires Docker or Finch) ---
+local-deploy: install-python install-node
+	@echo "Running local cdk deploy..."
+	. venv/bin/activate && npx cdk deploy --require-approval never
+
+local-synth: install-python install-node
+	@echo "Running local cdk synth..."
+	. venv/bin/activate && npx cdk synth --quiet
+
+local-bootstrap: install-python install-node
+	@echo "Running cdk bootstrap..."
+	. venv/bin/activate && npx cdk bootstrap
 
 # --- Destroy ---
 destroy:
@@ -39,6 +52,11 @@ venv/touchfile: requirements.txt
 	@echo "Installing Python requirements..."
 	. venv/bin/activate && pip install -r requirements.txt
 	touch venv/touchfile
+
+install-node: node_modules
+node_modules: package.json package-lock.json
+	@echo "Installing Node.js requirements..."
+	npm install
 
 clean:
 	@echo "Removing virtual environment and node modules..."
