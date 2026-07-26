@@ -102,7 +102,7 @@ class AdminConstruct(Construct):
             timeout=Duration.seconds(amount=60),
             environment={
                 "ASG_NAME": auto_scaling_group.auto_scaling_group_name,
-                "ECS_CLUSTER_NAME": cluster.cluster_name,  # <-- Add this                
+                "ECS_CLUSTER_NAME": cluster.cluster_name,
             }
         )
 

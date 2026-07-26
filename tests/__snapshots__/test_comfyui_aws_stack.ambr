@@ -2430,7 +2430,7 @@
           'SecurityGroupIngress': list([
             dict({
               'Description': 'Allow traffic to ComfyUI',
-              'FromPort': 8080,
+              'FromPort': 8181,
               'IpProtocol': 'tcp',
               'SourceSecurityGroupId': dict({
                 'Fn::GetAtt': list([
@@ -2438,7 +2438,7 @@
                   'GroupId',
                 ]),
               }),
-              'ToPort': 8080,
+              'ToPort': 8181,
             }),
             dict({
               'Description': 'Allow inbound traffic on port 8189',
@@ -2519,10 +2519,10 @@
         }),
         'Type': 'AWS::EC2::SecurityGroup',
       }),
-      'EcsConstructEcsConstructComfyServiceSecurityGroupfromComfyUIStackALBSecurityGroup378715658080C2D03570': dict({
+      'EcsConstructEcsConstructComfyServiceSecurityGroupfromComfyUIStackALBSecurityGroup3787156581818E8F4F0C': dict({
         'Properties': dict({
           'Description': 'Load balancer to target',
-          'FromPort': 8080,
+          'FromPort': 8181,
           'GroupId': dict({
             'Fn::GetAtt': list([
               'EcsConstructEcsConstructComfyServiceSecurityGroupC69D4E11',
@@ -2536,7 +2536,7 @@
               'GroupId',
             ]),
           }),
-          'ToPort': 8080,
+          'ToPort': 8181,
         }),
         'Type': 'AWS::EC2::SecurityGroupIngress',
       }),
@@ -2582,7 +2582,7 @@
               'HealthCheck': dict({
                 'Command': list([
                   'CMD-SHELL',
-                  'curl -f http://localhost:8080/system_stats || exit 1',
+                  'curl -f http://localhost:8181/system_stats || exit 1',
                 ]),
                 'Interval': 15,
                 'Retries': 8,
@@ -2597,7 +2597,7 @@
                     dict({
                       'Ref': 'AWS::URLSuffix',
                     }),
-                    '/cdk-hnb659fds-container-assets-123456789012-us-east-1:bfe16883b269643c7adf1105f522e74b66e5fd0c0f2b3b4d592db1f88ffd8967',
+                    '/cdk-hnb659fds-container-assets-123456789012-us-east-1:ac2a8c3fdddd5b0e4e0eee44111755a5a92b879349bcc64e58ef79c267f06b60',
                   ]),
                 ]),
               }),
@@ -2616,14 +2616,14 @@
                 dict({
                   'ContainerPath': '/home/user/opt/ComfyUI',
                   'ReadOnly': False,
-                  'SourceVolume': 'ComfyUIVolume-ba84ef1e44-20260717212512',
+                  'SourceVolume': 'ComfyUIVolume-ba84ef1e44-20260726000318',
                 }),
               ]),
               'Name': 'ComfyUIContainer',
               'PortMappings': list([
                 dict({
-                  'ContainerPort': 8080,
-                  'HostPort': 8080,
+                  'ContainerPort': 8181,
+                  'HostPort': 8181,
                   'Protocol': 'tcp',
                 }),
                 dict({
@@ -2679,7 +2679,7 @@
                 }),
                 'Scope': 'shared',
               }),
-              'Name': 'ComfyUIVolume-ba84ef1e44-20260717212512',
+              'Name': 'ComfyUIVolume-ba84ef1e44-20260726000318',
             }),
           ]),
         }),
@@ -2808,7 +2808,7 @@
           'LoadBalancers': list([
             dict({
               'ContainerName': 'ComfyUIContainer',
-              'ContainerPort': 8080,
+              'ContainerPort': 8181,
               'TargetGroupArn': dict({
                 'Ref': 'EcsConstructEcsConstructEcsTargetGroupBB50F379',
               }),
@@ -3027,13 +3027,13 @@
           'HealthCheckEnabled': True,
           'HealthCheckIntervalSeconds': 30,
           'HealthCheckPath': '/system_stats',
-          'HealthCheckPort': '8080',
+          'HealthCheckPort': '8181',
           'HealthCheckTimeoutSeconds': 5,
           'HealthyThresholdCount': 2,
           'Matcher': dict({
             'HttpCode': '200',
           }),
-          'Port': 8080,
+          'Port': 8181,
           'Protocol': 'HTTP',
           'TargetGroupAttributes': list([
             dict({
@@ -4145,7 +4145,7 @@
                     dict({
                       'Ref': 'ComfyUIuserPoolalbappclient47C9BB97',
                     }),
-                    '&logout_uri=https%3A//%24%7BToken%5BTOKEN.1292%5D%7D',
+                    '&logout_uri=https%3A//%24%7BToken%5BTOKEN.1288%5D%7D',
                   ]),
                 ]),
               }),

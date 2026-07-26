@@ -46,9 +46,8 @@ class VpcConstruct(Construct):
             }
         )
 
-        # 👇 ADD THESE TWO LINES
         vpc.enable_dns_support = True
-        vpc.enable_dns_hostnames = True        
+        vpc.enable_dns_hostnames = True
 
         if cheap_vpc:
             natInstance.security_group.add_ingress_rule(
