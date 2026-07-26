@@ -5,6 +5,10 @@ from aws_cdk import (
     aws_autoscaling as autoscaling,
     aws_cloudwatch as cloudwatch,
     aws_cloudwatch_actions as cw_actions,
+    aws_sns as sns,
+    aws_events as events,
+    aws_events_targets as events_targets,
+    aws_lambda as lambda_,
     Duration,
     RemovalPolicy,
 )
@@ -14,6 +18,7 @@ from cdk_nag import NagSuppressions
 
 class AsgConstruct(Construct):
     auto_scaling_group: autoscaling.AutoScalingGroup
+    asg_events_topic: sns.Topic
 
     def __init__(
             self,
@@ -32,8 +37,10 @@ class AsgConstruct(Construct):
             desired_capacity: int = 1,
             min_capacity: int = 0,
             max_capacity: int = 1,        
-            launch_template_id: str = None,   # <-- default None
+            launch_template_id: str = None,
             auto_scaling_group_id: str = "ASG",
+            slack_workspace_id: str = None,
+            slack_channel_id: str = None,
             **kwargs) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
@@ -212,6 +219,57 @@ class AsgConstruct(Construct):
                 schedule=autoscaling.Schedule.expression(schedule_scale_up)
             )
 
+        # Notifications
+        # CloudWatch Monitoring and Slack Notifications for ASG
+        asg_events_topic = None
+        if slack_workspace_id and slack_channel_id:
+            # Create SNS Topic for ASG Scaling Events
+            asg_events_topic = sns.Topic(
+                self, f"{construct_id}AsgEventsTopic",
+                display_name="ASG Scaling Events",
+                enforce_ssl=True
+            )
+
+            # Create a Lambda function to monitor ASG activity and detect errors
+            asg_monitor_lambda = lambda_.Function(
+                self, f"{construct_id}AsgMonitorLambda",
+                runtime=lambda_.Runtime.PYTHON_3_9,
+                handler="asg.handler",
+                code=lambda_.Code.from_asset(
+                    "./comfyui_aws_stack/lambda/monitor_lambda"),
+                environment={
+                    "ASG_NAME": auto_scaling_group.auto_scaling_group_name,
+                    "SNS_TOPIC_ARN": asg_events_topic.topic_arn
+                },
+                timeout=Duration.seconds(30)
+            )
+
+            # Grant permissions to the Lambda function
+            asg_events_topic.grant_publish(asg_monitor_lambda)
+            asg_monitor_lambda.add_to_role_policy(
+                iam.PolicyStatement(
+                    actions=["autoscaling:DescribeScalingActivities"],
+                    resources=["*"]
+                )
+            )
+
+            # Create EventBridge rule to trigger Lambda on ASG error events
+            events.Rule(
+                self, f"{construct_id}AsgEventRule",
+                event_pattern=events.EventPattern(
+                    source=["aws.autoscaling"],
+                    detail_type=[
+                        "EC2 Instance Launch Unsuccessful",
+                        "EC2 Instance Terminate Unsuccessful",
+                        "EC2 Auto Scaling Instance Launch Error",
+                        "EC2 Auto Scaling Instance Terminate Error",
+                        "EC2 Auto Scaling Group Launch Error"
+                    ],
+                    resources=[auto_scaling_group.auto_scaling_group_arn]
+                ),
+                targets=[events_targets.LambdaFunction(asg_monitor_lambda)]
+            )
+
         # Nag
 
         NagSuppressions.add_resource_suppressions(
@@ -245,6 +303,20 @@ class AsgConstruct(Construct):
             apply_to_children=True
         )
 
+        if asg_events_topic:
+            NagSuppressions.add_resource_suppressions(
+                [asg_events_topic],
+                suppressions=[
+                    {"id": "AwsSolutions-SNS2",
+                     "reason": "SNS topic is implicitly created by LifeCycleActions and is not critical for sample purposes."
+                     },
+                    {"id": "AwsSolutions-SNS3",
+                     "reason": "SNS topic is implicitly created by LifeCycleActions and is not critical for sample purposes."
+                     },
+                ],
+            )
+
         # Output
 
         self.auto_scaling_group = auto_scaling_group
+        self.asg_events_topic = asg_events_topic

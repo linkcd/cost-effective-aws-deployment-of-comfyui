@@ -2,7 +2,9 @@ from aws_cdk import (
     Stack,
     CfnOutput,
     aws_ecs as ecs,
-    aws_servicediscovery as servicediscovery, 
+    aws_servicediscovery as servicediscovery,
+    aws_chatbot as chatbot,
+    aws_iam as iam,
 )
 from constructs import Construct
 
@@ -50,7 +52,10 @@ class ComfyUIStack(Stack):
                  domain_name: str = None,
                  hosted_zone_id: str = None,
                  enable_comfyui: bool = True,
-                 comfyui_instance_type: str = "g6e.2xlarge",               
+                 comfyui_instance_type: str = "g6e.2xlarge",
+                 # Slack
+                 slack_workspace_id: str = None,
+                 slack_channel_id: str = None,
                  **kwargs) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
@@ -129,6 +134,8 @@ class ComfyUIStack(Stack):
                 schedule_scale_up=schedule_scale_up,
                 instance_type=comfyui_instance_type,
                 desired_capacity=1,
+                slack_workspace_id=slack_workspace_id,
+                slack_channel_id=slack_channel_id,
             )
 
         # ECS
@@ -144,7 +151,9 @@ class ComfyUIStack(Stack):
                 region=region,
                 user_pool=auth_construct.user_pool,
                 user_pool_client=auth_construct.user_pool_client,
-                cluster=ecs_cluster, 
+                cluster=ecs_cluster,
+                slack_workspace_id=slack_workspace_id,
+                slack_channel_id=slack_channel_id,
             )
         else:
             raise ValueError("ComfyUI must be enabled for ECS deployment.")
@@ -177,7 +186,29 @@ class ComfyUIStack(Stack):
             admin_construct.add_environments(
                 lambda_admin_rule=alb_construct.lambda_admin_rule,
             )
-            
+
+        # Slack
+
+        if slack_workspace_id and slack_channel_id:
+            slack_channel = chatbot.SlackChannelConfiguration(
+                self, "SlackChannel",
+                slack_channel_configuration_name="TestChannel",
+                slack_workspace_id=slack_workspace_id,
+                slack_channel_id=slack_channel_id,
+                notification_topics=[
+                    asg_comfy.asg_events_topic, ecs_construct.ecs_health_topic]
+            )
+            slack_channel.role.add_managed_policy(
+                iam.ManagedPolicy.from_aws_managed_policy_name(
+                    "CloudWatchReadOnlyAccess"
+                )
+            )
+            slack_channel.role.add_managed_policy(
+                iam.ManagedPolicy.from_aws_managed_policy_name(
+                    "AmazonQFullAccess"
+                )
+            )
+
         # Output
 
         CfnOutput(self, "Endpoint", value=auth_construct.application_dns_name)
