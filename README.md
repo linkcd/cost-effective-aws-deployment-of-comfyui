@@ -372,6 +372,8 @@ All parameters are set in `app.py` when instantiating `ComfyUIStack`. See [Deplo
 | `host_name` | `None` | Custom domain hostname (requires Route 53 hosted zone) |
 | `domain_name` | `None` | Custom domain name |
 | `hosted_zone_id` | `None` | Route 53 hosted zone ID |
+| `slack_workspace_id` | `None` | Slack workspace ID for notifications (enables ASG/ECS alerts) |
+| `slack_channel_id` | `None` | Slack channel ID for notifications |
 
 ### Well-Architected Considerations
 
@@ -379,7 +381,7 @@ This sample deployment prioritizes cost and simplicity. The following trade-offs
 
 **Operational Excellence**
 - CI/CD via CodeBuild (`make deploy`). No local Docker required. No automated rollback — failed deploys require manual intervention or redeployment.
-- Monitoring relies on CloudWatch Container Insights (enabled by default).
+- Monitoring relies on CloudWatch Container Insights (enabled by default). Optional Slack notifications for ASG and ECS health events.
 
 **Security**
 - Authentication via Amazon Cognito (user pool or SAML). Optional WAF with IP allowlisting and rate limiting.

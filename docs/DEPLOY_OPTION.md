@@ -189,3 +189,22 @@ comfy_ui_stack = ComfyUIStack(
     ...
 )
 ```
+
+
+## Monitoring and Notifications
+
+### Slack Integration
+
+You can enable Slack notifications to monitor the health and status of your ComfyUI deployment. When configured, the system will send alerts to your specified Slack channel for ASG scaling errors and ECS task health issues.
+
+**Edit [app.py](/app.py)**
+
+```python
+comfy_ui_stack = ComfyUIStack(
+    ...
+    # Override Parameters
+    slack_workspace_id="XXXXXXXX",  # Your Slack Workspace ID
+    slack_channel_id="XXXXXXXXX",   # Your Slack Channel ID
+    ...
+)
+```

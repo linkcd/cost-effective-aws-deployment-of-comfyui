@@ -42,7 +42,7 @@
 
 再現性と一貫性を確保するために、このソリューションのデプロイとテストには [Amazon SageMaker Studio Code Editor](https://docs.aws.amazon.com/sagemaker/latest/dg/code-editor.html) の使用をお勧めします。
 
-ℹ️ ローカル開発環境を使用することもできますが、AWS CLI、AWS CDK、Docker が適切に設定されていることを確認する必要があります。
+ℹ️ ローカル開発環境を使用することもできますが、**Python 3.9+、Node.js 20+、AWS CLI、AWS CDK が適切に設定されている**必要があります。
 
 <details>
 <summary>Amazon SageMaker Studio Code Editor での環境設定を (クリックして表示) </summary>
@@ -61,7 +61,7 @@
 - **[Node.js 20.x 以降](https://nodejs.org/)** — AWS CDK CLI (`npx cdk`) に必要
 - **[AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html)** — AWSアカウント認証とリソース管理用
 - **[AWS CDK](https://docs.aws.amazon.com/cdk/v2/guide/getting_started.html)** — Infrastructure as Code フレームワーク (`npm` でインストール)
-- **[Docker](https://docs.docker.com/engine/install/)** — ComfyUIコンテナイメージのビルド用 (Engine 24.x+)
+- **[Docker](https://docs.docker.com/engine/install/)** — ComfyUIコンテナイメージのビルド用 (ローカルデプロイのみ; CodeBuild デプロイでは不要)
 - **[GNU Make](https://www.gnu.org/software/make/)** — ビルド自動化用 (macOS/Linuxにはプリインストール; WindowsではWSLを使用)
 - **~20 GB の空きディスク容量** — GPU Dockerイメージのビルド (CUDA + PyTorch + ComfyUI) には大容量が必要
 
@@ -87,7 +87,42 @@ aws configure
 
 1. (初回のみ) このリポジトリをクローンします (`git clone https://github.com/aws-samples/cost-effective-aws-deployment-of-comfyui.git`)
 2. (初回のみ) リポジトリのディレクトリに移動します (`cd cost-effective-aws-deployment-of-comfyui`)
-3. `make` を実行しデプロイ
+3. (初回のみ) `make setup` を実行 — CodeBuild CI/CD パイプラインを作成します (ローカル Docker 不要)
+4. `make` を実行 — CodeBuild 経由で AWS 上にデプロイします
+
+デプロイ前にターゲットリージョンを設定してください:
+```bash
+export AWS_DEFAULT_REGION=us-west-2  # 好みのリージョン
+make setup
+make deploy
+```
+
+ローカル Docker は不要です。すべてのビルドは CodeBuild で実行されます。
+
+| コマンド | 説明 |
+|---------|------|
+| `make setup` | 初回のみ: CodeBuild インフラを作成 |
+| `make` | CodeBuild 経由でデプロイ (AWS 上で実行) |
+| `make status` | 最新ビルドのステータスを確認 |
+| `make logs` | ビルドログの最後の40行を表示 |
+| `make destroy` | ComfyUI スタックを削除 (CodeBuild は保持) |
+| `make cleanup` | すべてを削除 (ComfyUI + CodeBuild) |
+
+#### オプション B: ローカルデプロイ (Docker または Finch が必要)
+
+マシンから直接デプロイする場合:
+
+```bash
+export AWS_DEFAULT_REGION=us-west-2
+make local-bootstrap   # 初回のみ
+make local-deploy
+```
+
+| コマンド | 説明 |
+|---------|------|
+| `make local-bootstrap` | 初回のみ: CDK をブートストラップ |
+| `make local-deploy` | `cdk deploy` で直接デプロイ (Docker 必要) |
+| `make local-synth` | ローカルで CloudFormation テンプレートを合成 |
 
 Dockerfile のカスタムノードと拡張機能によっては、ComfyUI が使用可能になるまで約 8〜10 分かかります。
 
@@ -164,6 +199,8 @@ ComfyUI の機能を最大限に活用し、シームレスな体験を確保す
     - [自動/スケジュールでスケールダウン](docs/DEPLOY_OPTION.md#scale-down-automatically--on-schedule)
     - [NAT ゲートウェイの代わりに NAT インスタンスを使用する](docs/DEPLOY_OPTION.md#use-nat-insatnce-instead-of-nat-gateway)
 - [カスタムドメインの使用](docs/DEPLOY_OPTION.md#using-a-custom-domain)
+- [監視と通知](docs/DEPLOY_OPTION.md#monitoring-and-notifications)
+    - [Slack 連携](docs/DEPLOY_OPTION.md#slack-integration)
 
 ### デプロイメントを削除してリソースをクリーンアップする
 
