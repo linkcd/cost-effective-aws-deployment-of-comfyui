@@ -1,0 +1,33 @@
+version: 0.2
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.12
+      nodejs: 20
+    commands:
+      - echo "=== INSTALL PYTHON DEPS ==="
+      - python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt
+      - echo "=== INSTALL NODE DEPS ==="
+      - npm install
+
+  build:
+    commands:
+      - echo "=== CDK SYNTH ==="
+      - source .venv/bin/activate && npx cdk synth --quiet
+      - echo "=== VERIFY AL2023 IN TEMPLATE ==="
+      - grep "amazon-linux-2023" cdk.out/ComfyUIStack.template.json && echo "PASS - AL2023 literal found" || echo "INFO - AL2023 may be resolved at deploy time via SSM token"
+      - grep -i "optimized-ami\|EcsOptimized\|amazon-linux" cdk.out/ComfyUIStack.template.json | head -5 || true
+      - echo "=== CDK BOOTSTRAP ==="
+      - source .venv/bin/activate && npx cdk bootstrap
+      - echo "=== CDK DEPLOY ==="
+      - source .venv/bin/activate && npx cdk deploy --require-approval never
+
+  post_build:
+    commands:
+      - echo "=== DEPLOY COMPLETE ==="
+      - source .venv/bin/activate && npx cdk diff || true
+
+artifacts:
+  files:
+    - cdk.out/**/*

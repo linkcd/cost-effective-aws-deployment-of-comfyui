@@ -9,6 +9,7 @@
 💡 注意:这个解决方案会产生AWS成本。您可以在成本部分找到更多相关信息。
 
 ![comfy](docs/assets/comfy.png)
+![comfy gallery](docs/assets/comfy_gallery.png)
 
 ## 解决方案特点
 
@@ -40,7 +41,7 @@
 
 为了确保可重复性和一致性,我们建议使用 [Amazon SageMaker Studio Code Editor](https://docs.aws.amazon.com/sagemaker/latest/dg/code-editor.html) 来部署和测试此解决方案。
 
-ℹ️ 您也可以使用本地开发环境,但需要确保正确配置了 AWS CLI、AWS CDK 和 Docker。
+ℹ️ 您也可以使用本地开发环境,但需要确保正确配置了 **Python 3.9+、Node.js 20+、AWS CLI 和 AWS CDK**。
 
 <details>
 <summary>在 Amazon SageMaker Studio Code Editor 中设置环境 (点击展开)</summary>
@@ -52,6 +53,16 @@
 
 <details>
 <summary>在本地环境中设置环境 (点击展开)</summary>
+
+本地部署需要以下工具:
+
+- **[Python 3.9+](https://www.python.org/downloads/)** — CDK应用程序和基础设施代码所需
+- **[Node.js 20.x 或更高版本](https://nodejs.org/)** — AWS CDK CLI (`npx cdk`) 所需
+- **[AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html)** — 用于AWS账户认证和资源管理
+- **[AWS CDK](https://docs.aws.amazon.com/cdk/v2/guide/getting_started.html)** — 基础设施即代码框架 (通过 `npm` 安装)
+- **[Docker](https://docs.docker.com/engine/install/)** — 用于构建ComfyUI容器镜像 (仅本地部署需要; CodeBuild 部署不需要)
+- **[GNU Make](https://www.gnu.org/software/make/)** — 用于构建自动化 (macOS/Linux预装; Windows请使用WSL)
+- **~20 GB 可用磁盘空间** — GPU Docker 镜像构建 (CUDA + PyTorch + ComfyUI) 需要较大磁盘空间
 
 如果没有 AWS CLI,请按照 [AWS CLI 安装指南](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) 进行安装。
 
@@ -75,8 +86,42 @@ aws configure
 
 1. (仅限首次) 克隆此存储库 (`git clone https://github.com/aws-samples/cost-effective-aws-deployment-of-comfyui.git`)
 2. (仅限首次) 切换到存储库目录 (`cd cost-effective-aws-deployment-of-comfyui`)
-3. (仅首次，如果尚未完成 cdk bootstrap) 运行 `make bootstrap` (最小 [IAM 策略](https://github.com/aws/aws-cdk/wiki/Security-And-Safety-Dev-Guide#policies-for-bootstrapping))
-4. 运行 `make` (最小 [IAM 策略](https://github.com/aws/aws-cdk/wiki/Security-And-Safety-Dev-Guide#policies-for-bootstrapping))
+3. (仅限首次) 运行 `make setup` — 创建 CodeBuild CI/CD 管道 (无需本地 Docker)
+4. 运行 `make` — 通过 CodeBuild 在 AWS 上部署
+
+部署前设置目标区域:
+```bash
+export AWS_DEFAULT_REGION=us-west-2  # 或您首选的区域
+make setup
+make deploy
+```
+
+无需本地 Docker。所有构建在 CodeBuild 中运行。
+
+| 命令 | 说明 |
+|------|------|
+| `make setup` | 仅限首次: 创建 CodeBuild 基础设施 |
+| `make` | 通过 CodeBuild 部署 (在 AWS 上运行) |
+| `make status` | 检查最新构建状态 |
+| `make logs` | 打印最后40行构建日志 |
+| `make destroy` | 删除 ComfyUI 堆栈 (保留 CodeBuild) |
+| `make cleanup` | 删除所有 (ComfyUI + CodeBuild) |
+
+#### 选项 B: 本地部署 (需要 Docker 或 Finch)
+
+如果您希望从本地机器直接部署:
+
+```bash
+export AWS_DEFAULT_REGION=us-west-2
+make local-bootstrap   # 仅限首次
+make local-deploy
+```
+
+| 命令 | 说明 |
+|------|------|
+| `make local-bootstrap` | 仅限首次: 引导 CDK |
+| `make local-deploy` | 通过 `cdk deploy` 直接部署 (需要 Docker) |
+| `make local-synth` | 本地合成 CloudFormation 模板 |
 
 根据 Dockerfile 中的自定义节点和扩展,ComfyUI 可能需要 8-10 分钟才能准备就绪。
 
@@ -92,7 +137,7 @@ aws configure
 aws ssm start-session --target "$(aws ec2 describe-instances --filters "Name=tag:Name,Values=ComfyUIStack/Host" "Name=instance-state-name,Values=running" --query 'Reservations[].Instances[].[InstanceId]' --output text)" --region $AWS_DEFAULT_REGION
 
 # 2. 通过 SSH 连接容器
-container_id=$(sudo docker container ls --format '{{.ID}} {{.Image}}' | grep 'cdk' | awk '{print $1}')
+container_id=$(sudo docker container ls --format '{{.ID}} {{.Image}}' | grep 'comfyui:latest$' | awk '{print $1}')
 sudo docker exec -it $container_id /bin/bash
 
 # 3. 安装所需的模型、lora、controlnet 等(也可以将所有内容包含在脚本中一起执行)
@@ -112,8 +157,11 @@ wget -c https://huggingface.co/ai-forever/Real-ESRGAN/blob/main/RealESRGAN_x2.pt
 要充分利用 ComfyUI 的功能并确保无缝体验,请查看详细的[用户指南](docs/USER_GUIDE.md)。该指南涵盖从安装到高级配置的所有步骤,帮助您轻松利用 AI 驱动的图像生成功能。
 
 - [安装扩展(自定义节点)](docs/USER_GUIDE.md#installing-extensions-custom-nodes)
+    - [推荐的扩展](docs/USER_GUIDE.md#recommended-extensions)
+        - [ComfyUI Workspace Manager](docs/USER_GUIDE.md#comfyui-workspace-manager)
 - [安装模型](docs/USER_GUIDE.md#installing-models)
     - [使用 ComfyUI-Manager](docs/USER_GUIDE.md#using-comfyui-manager)
+    - [使用其他扩展](docs/USER_GUIDE.md#using-other-extensions)
     - [手动安装](docs/USER_GUIDE.md#manual-installation)
 - [运行工作流](docs/USER_GUIDE.md#running-a-workflow)
 
@@ -129,15 +177,14 @@ wget -c https://huggingface.co/ai-forever/Real-ESRGAN/blob/main/RealESRGAN_x2.pt
     - [限制可注册的电子邮件地址域](docs/DEPLOY_OPTION.md#restrict-the-email-address-domains-that-can-sign-up)
     - [启用 AWS WAF 限制](docs/DEPLOY_OPTION.md#enable-aws-waf-restrictions)
         - [IP 地址限制](docs/DEPLOY_OPTION.md#ip-address-restrictions)
-        - [Rate limiting](docs/DEPLOY_OPTION.md#rate-limiting)
     - [SAML 身份验证](docs/DEPLOY_OPTION.md#saml-authentication)
 - [成本相关设置](docs/DEPLOY_OPTION.md#cost-related-settings)
     - [Spot 实例](docs/DEPLOY_OPTION.md#spot-instance)
     - [自动/定期缩容](docs/DEPLOY_OPTION.md#scale-down-automatically--on-schedule)
     - [使用 NAT 实例而不是 NAT 网关](docs/DEPLOY_OPTION.md#use-nat-insatnce-instead-of-nat-gateway)
-- [Monitoring and Notifications](docs/DEPLOY_OPTION.md#monitoring-and-notifications)
-    - [Slack Integration](docs/DEPLOY_OPTION.md#slack-integration)
 - [使用自定义域名](docs/DEPLOY_OPTION.md#using-a-custom-domain)
+- [监控和通知](docs/DEPLOY_OPTION.md#monitoring-and-notifications)
+    - [Slack 集成](docs/DEPLOY_OPTION.md#slack-integration)
 
 
 ### 删除部署并清理资源
@@ -185,12 +232,12 @@ npx cdk destroy
 
 #### 灵活的工作负载(默认)
 
-对于业务上不太重要的工作负载,大多数应用程序都属于这种类型,您可以利用使用spot实例来获得成本优惠。spot实例在 `g4dn.xlarge` 实例类型上提供平均 71% (us-east-1, 2024年10月)的折扣。此外,您还可以将NAT网关替换为NAT实例,进一步降低成本。
+对于业务上不太重要的工作负载,大多数应用程序都属于这种类型,您可以利用使用spot实例来获得成本优惠。spot实例通常可以为 `g4dn.xlarge`、`g5.xlarge` 和 `g6.xlarge` 等GPU实例类型节省60-90%的成本。实际折扣因实例类型、区域和可用性而异——请查看 [AWS Spot Instance Advisor](https://aws.amazon.com/ec2/spot/instance-advisor/) 获取最新数据。此外,您还可以将NAT网关替换为NAT实例,进一步降低成本。
 
 成本估算的前提条件如下:
 
 - 不包括 AWS 免费层服务。
-- 实例类型: `g4dn.xlarge` (4 vCPU, 16 GiB 内存, 1 个 Nvidia T4 Tensor Core GPU), spot实例 (71% 折扣)。
+- 实例类型: `g4dn.xlarge` (4 vCPU, 16 GiB 内存, 1 个 Nvidia T4 Tensor Core GPU), spot实例 (估算约70%折扣,实际折扣因区域和时间而异)。
 - 250 GB SSD 存储。
 - 1 个 Application Load Balancer。
 - 带有 NAT 实例的 VPC。

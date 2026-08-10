@@ -2,48 +2,59 @@ import json
 import boto3
 import os
 
-
 def handler(event, context):
+    # Read ASG names from environment variables
+    asg_names = [os.environ.get('ASG_NAME')]
+    asg_names = [name for name in asg_names if name]  # Filter out None
 
-    asg_name = os.environ.get("ASG_NAME")
+    # Optional: capture ECS cluster (not used here, but available for extension)
+    ecs_cluster_name = os.environ.get("ECS_CLUSTER_NAME")
 
-    # Validate environment variables
-    if not asg_name:
+    if not asg_names:
         return {
             'statusCode': 400,
-            'body': json.dumps('ASG name not provided')
+            'body': json.dumps("No ASG names provided in environment variables (ASG_NAME)")
         }
 
-    # Clients
     asg_client = boto3.client('autoscaling')
+    results = {}
 
-    try:
-        # Get the current ASG configuration
-        asg_response = asg_client.describe_auto_scaling_groups(
-            AutoScalingGroupNames=[asg_name]
-        )
-
-        # Check if the desired capacity is already 1
-        desired_capacity = asg_response['AutoScalingGroups'][0]['DesiredCapacity']
-        if desired_capacity == 1:
-            # Update the desired capacity of the ASG
-            response = asg_client.set_desired_capacity(
-                AutoScalingGroupName=asg_name,
-                DesiredCapacity=0,
-                HonorCooldown=False
+    for asg_name in asg_names:
+        try:
+            # Describe the ASG
+            response = asg_client.describe_auto_scaling_groups(
+                AutoScalingGroupNames=[asg_name]
             )
-            message = "ComfyUI is shutting down"
-        else:
-            message = "ComfyUI is already shutdown"
 
-    except Exception as e:
-        # Handle any exceptions that occur
-        print(f"Error: {e}")
-        message = "Error occurred. Unable to scale ComfyUI."
+            if not response.get('AutoScalingGroups'):
+                results[asg_name] = "ASG not found"
+                continue
+
+            group = response['AutoScalingGroups'][0]
+            desired_capacity = group['DesiredCapacity']
+            min_size = group['MinSize']
+
+            if min_size > 0:
+                results[asg_name] = f"MinSize is {min_size}, cannot scale down to 0"
+                continue
+
+            if desired_capacity > 0:
+                asg_client.set_desired_capacity(
+                    AutoScalingGroupName=asg_name,
+                    DesiredCapacity=0,
+                    HonorCooldown=False
+                )
+                results[asg_name] = "Set desired capacity to 0 (shutting down)"
+            else:
+                results[asg_name] = "Already shut down"
+
+        except Exception as e:
+            results[asg_name] = f"Error: {str(e)}"
 
     return {
-        "statusCode": 302,
-        "headers": {
-            "Location": "/"
+        'statusCode': 200,
+        'body': json.dumps(results),
+        'headers': {
+            'Content-Type': 'application/json'
         }
     }

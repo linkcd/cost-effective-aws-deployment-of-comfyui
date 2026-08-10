@@ -7,6 +7,16 @@
           'Ref': 'ComfyUIuserPooluserpooldomain109F57F1',
         }),
       }),
+      'ComfyUIASGName': dict({
+        'Value': dict({
+          'Ref': 'ComfyUIAsgASG6C9B9A45',
+        }),
+      }),
+      'ComfyUIS3Bucket': dict({
+        'Value': dict({
+          'Ref': 'EcsConstructEcsConstructComfyUIBucketAE7FB2B1',
+        }),
+      }),
       'Endpoint': dict({
         'Value': dict({
           'Fn::GetAtt': list([
@@ -31,8 +41,8 @@
         'Default': '/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-6.1-arm64',
         'Type': 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>',
       }),
-      'SsmParameterValueawsserviceecsoptimizedamiamazonlinux2gpurecommendedimageidC96584B6F00A464EAD1953AFF4B05118Parameter': dict({
-        'Default': '/aws/service/ecs/optimized-ami/amazon-linux-2/gpu/recommended/image_id',
+      'SsmParameterValueawsserviceecsoptimizedamiamazonlinux2023gpurecommendedimageidC96584B6F00A464EAD1953AFF4B05118Parameter': dict({
+        'Default': '/aws/service/ecs/optimized-ami/amazon-linux-2023/gpu/recommended/image_id',
         'Type': 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>',
       }),
     }),
@@ -43,11 +53,11 @@
             'rules_to_suppress': list([
               dict({
                 'id': 'AwsSolutions-EC23',
-                'reason': 'The Security Group and ALB needs to allow 0.0.0.0/0 inbound access for the ALB to be publicly accessible. Additional security is provided via Cognito authentication.',
+                'reason': 'Allow 0.0.0.0/0 for ALB access via Cognito',
               }),
               dict({
                 'id': 'AwsSolutions-ELB2',
-                'reason': 'Adding access logs requires extra S3 bucket so removing it for sample purposes.',
+                'reason': 'Omitting access logs for simplicity',
               }),
             ]),
           }),
@@ -83,7 +93,240 @@
         }),
         'Type': 'AWS::EC2::SecurityGroup',
       }),
-      'ASG46ED3070': dict({
+      'AdminFunction09BA95C5': dict({
+        'DependsOn': list([
+          'LambdaExecutionRoleDefaultPolicy6D69732F',
+          'LambdaExecutionRoleD5C26073',
+        ]),
+        'Properties': dict({
+          'Code': dict({
+            'S3Bucket': 'cdk-hnb659fds-assets-123456789012-us-east-1',
+            'S3Key': '2d1d5f493105453e308878a4d8d97e9287535259be1cd883dfc06ca7988c3e9e.zip',
+          }),
+          'Environment': dict({
+            'Variables': dict({
+              'ASG_NAME': dict({
+                'Ref': 'ComfyUIAsgASG6C9B9A45',
+              }),
+              'ECS_CLUSTER_NAME': dict({
+                'Ref': 'EcsCluster97242B84',
+              }),
+              'ECS_SERVICE_NAME': dict({
+                'Fn::GetAtt': list([
+                  'EcsConstructEcsConstructComfyUIService0E4FAFD1',
+                  'Name',
+                ]),
+              }),
+            }),
+          }),
+          'Handler': 'admin.handler',
+          'Role': dict({
+            'Fn::GetAtt': list([
+              'LambdaExecutionRoleD5C26073',
+              'Arn',
+            ]),
+          }),
+          'Runtime': 'python3.12',
+          'Timeout': 60,
+        }),
+        'Type': 'AWS::Lambda::Function',
+      }),
+      'AdminFunctionInvoke2UTWxhlfyqbT5FTn5jvgbLgjFfJwzswGk55DU1HY2FBB538B': dict({
+        'Properties': dict({
+          'Action': 'lambda:InvokeFunction',
+          'FunctionName': dict({
+            'Fn::GetAtt': list([
+              'AdminFunction09BA95C5',
+              'Arn',
+            ]),
+          }),
+          'Principal': 'elasticloadbalancing.amazonaws.com',
+        }),
+        'Type': 'AWS::Lambda::Permission',
+      }),
+      'ComfyUIALB1DAC5A97': dict({
+        'DependsOn': list([
+          'CustomVPCPublicSubnet1DefaultRoute3F6B4A61',
+          'CustomVPCPublicSubnet1RouteTableAssociationCB53C136',
+          'CustomVPCPublicSubnet2DefaultRoute00A279CB',
+          'CustomVPCPublicSubnet2RouteTableAssociation7DDF1FE5',
+        ]),
+        'Metadata': dict({
+          'cdk_nag': dict({
+            'rules_to_suppress': list([
+              dict({
+                'id': 'AwsSolutions-EC23',
+                'reason': 'The Security Group and ALB needs to allow 0.0.0.0/0 inbound access for the ALB to be publicly accessible. Additional security is provided via Cognito authentication.',
+              }),
+              dict({
+                'id': 'AwsSolutions-ELB2',
+                'reason': 'Adding access logs requires extra S3 bucket so removing it for sample purposes.',
+              }),
+            ]),
+          }),
+        }),
+        'Properties': dict({
+          'LoadBalancerAttributes': list([
+            dict({
+              'Key': 'deletion_protection.enabled',
+              'Value': 'false',
+            }),
+          ]),
+          'Scheme': 'internet-facing',
+          'SecurityGroups': list([
+            dict({
+              'Fn::GetAtt': list([
+                'ALBSecurityGroup29A3BDEF',
+                'GroupId',
+              ]),
+            }),
+          ]),
+          'Subnets': list([
+            dict({
+              'Ref': 'CustomVPCPublicSubnet1Subnet758D3909',
+            }),
+            dict({
+              'Ref': 'CustomVPCPublicSubnet2Subnet9CA8FBEB',
+            }),
+          ]),
+          'Type': 'application',
+        }),
+        'Type': 'AWS::ElasticLoadBalancingV2::LoadBalancer',
+      }),
+      'ComfyUIALBListener13444DC1': dict({
+        'Metadata': dict({
+          'cdk_nag': dict({
+            'rules_to_suppress': list([
+              dict({
+                'id': 'AwsSolutions-EC23',
+                'reason': 'The Security Group and ALB needs to allow 0.0.0.0/0 inbound access for the ALB to be publicly accessible. Additional security is provided via Cognito authentication.',
+              }),
+              dict({
+                'id': 'AwsSolutions-ELB2',
+                'reason': 'Adding access logs requires extra S3 bucket so removing it for sample purposes.',
+              }),
+            ]),
+          }),
+        }),
+        'Properties': dict({
+          'Certificates': list([
+            dict({
+              'CertificateArn': dict({
+                'Ref': 'SelfSignedCertCustomResource',
+              }),
+            }),
+          ]),
+          'DefaultActions': list([
+            dict({
+              'TargetGroupArn': dict({
+                'Ref': 'EcsConstructEcsConstructEcsTargetGroupBB50F379',
+              }),
+              'Type': 'forward',
+            }),
+          ]),
+          'LoadBalancerArn': dict({
+            'Ref': 'ComfyUIALB1DAC5A97',
+          }),
+          'Port': 443,
+          'Protocol': 'HTTPS',
+        }),
+        'Type': 'AWS::ElasticLoadBalancingV2::Listener',
+      }),
+      'ComfyUIALBListenerAuthenticateRuleRule8586BA87': dict({
+        'Metadata': dict({
+          'cdk_nag': dict({
+            'rules_to_suppress': list([
+              dict({
+                'id': 'AwsSolutions-EC23',
+                'reason': 'The Security Group and ALB needs to allow 0.0.0.0/0 inbound access for the ALB to be publicly accessible. Additional security is provided via Cognito authentication.',
+              }),
+              dict({
+                'id': 'AwsSolutions-ELB2',
+                'reason': 'Adding access logs requires extra S3 bucket so removing it for sample purposes.',
+              }),
+            ]),
+          }),
+        }),
+        'Properties': dict({
+          'Actions': list([
+            dict({
+              'AuthenticateCognitoConfig': dict({
+                'UserPoolArn': dict({
+                  'Fn::GetAtt': list([
+                    'ComfyUIuserPool52D4ADA1',
+                    'Arn',
+                  ]),
+                }),
+                'UserPoolClientId': dict({
+                  'Ref': 'ComfyUIuserPoolalbappclient47C9BB97',
+                }),
+                'UserPoolDomain': dict({
+                  'Ref': 'ComfyUIuserPooluserpooldomain109F57F1',
+                }),
+              }),
+              'Order': 1,
+              'Type': 'authenticate-cognito',
+            }),
+            dict({
+              'Order': 2,
+              'TargetGroupArn': dict({
+                'Ref': 'EcsConstructEcsConstructEcsTargetGroupBB50F379',
+              }),
+              'Type': 'forward',
+            }),
+          ]),
+          'Conditions': list([
+            dict({
+              'Field': 'path-pattern',
+              'PathPatternConfig': dict({
+                'Values': list([
+                  '/*',
+                ]),
+              }),
+            }),
+          ]),
+          'ListenerArn': dict({
+            'Ref': 'ComfyUIALBListener13444DC1',
+          }),
+          'Priority': 30,
+        }),
+        'Type': 'AWS::ElasticLoadBalancingV2::ListenerRule',
+      }),
+      'ComfyUIALBRedirect80To443EB0E6DF8': dict({
+        'Metadata': dict({
+          'cdk_nag': dict({
+            'rules_to_suppress': list([
+              dict({
+                'id': 'AwsSolutions-EC23',
+                'reason': 'The Security Group and ALB needs to allow 0.0.0.0/0 inbound access for the ALB to be publicly accessible. Additional security is provided via Cognito authentication.',
+              }),
+              dict({
+                'id': 'AwsSolutions-ELB2',
+                'reason': 'Adding access logs requires extra S3 bucket so removing it for sample purposes.',
+              }),
+            ]),
+          }),
+        }),
+        'Properties': dict({
+          'DefaultActions': list([
+            dict({
+              'RedirectConfig': dict({
+                'Port': '443',
+                'Protocol': 'HTTPS',
+                'StatusCode': 'HTTP_301',
+              }),
+              'Type': 'redirect',
+            }),
+          ]),
+          'LoadBalancerArn': dict({
+            'Ref': 'ComfyUIALB1DAC5A97',
+          }),
+          'Port': 80,
+          'Protocol': 'HTTP',
+        }),
+        'Type': 'AWS::ElasticLoadBalancingV2::Listener',
+      }),
+      'ComfyUIAsgASG6C9B9A45': dict({
         'DeletionPolicy': 'Delete',
         'Metadata': dict({
           'cdk_nag': dict({
@@ -104,6 +347,22 @@
                 'id': 'AwsSolutions-AS3',
                 'reason': 'Not all notifications are critical for ComfyUI sample',
               }),
+              dict({
+                'id': 'AwsSolutions-L1',
+                'reason': 'Custom lambda runtime, implicit ECS drain hook',
+              }),
+              dict({
+                'id': 'AwsSolutions-SNS2',
+                'reason': 'SNS topic implicit by LifeCycleActions',
+              }),
+              dict({
+                'id': 'AwsSolutions-SNS3',
+                'reason': 'SNS topic implicit by LifeCycleActions',
+              }),
+              dict({
+                'id': 'AwsSolutions-AS3',
+                'reason': 'Not all notifications critical for sample',
+              }),
             ]),
           }),
         }),
@@ -123,33 +382,18 @@
             'LaunchTemplate': dict({
               'LaunchTemplateSpecification': dict({
                 'LaunchTemplateId': dict({
-                  'Ref': 'HostB4E45AD7',
+                  'Ref': 'ComfyUIAsgComfyUIAsgLaunchTemplateEBF610DD',
                 }),
                 'Version': dict({
                   'Fn::GetAtt': list([
-                    'HostB4E45AD7',
+                    'ComfyUIAsgComfyUIAsgLaunchTemplateEBF610DD',
                     'LatestVersionNumber',
                   ]),
                 }),
               }),
               'Overrides': list([
                 dict({
-                  'InstanceType': 'g4dn.xlarge',
-                }),
-                dict({
-                  'InstanceType': 'g5.xlarge',
-                }),
-                dict({
-                  'InstanceType': 'g6.xlarge',
-                }),
-                dict({
-                  'InstanceType': 'g4dn.2xlarge',
-                }),
-                dict({
-                  'InstanceType': 'g5.2xlarge',
-                }),
-                dict({
-                  'InstanceType': 'g6.2xlarge',
+                  'InstanceType': 'g6e.2xlarge',
                 }),
               ]),
             }),
@@ -158,9 +402,6 @@
           'VPCZoneIdentifier': list([
             dict({
               'Ref': 'CustomVPCPrivateSubnet1SubnetBC3416DA',
-            }),
-            dict({
-              'Ref': 'CustomVPCPrivateSubnet2SubnetA2CC0D16',
             }),
           ]),
         }),
@@ -172,29 +413,29 @@
         }),
         'UpdateReplacePolicy': 'Delete',
       }),
-      'ASGDrainECSHookFunction5F24CF4D': dict({
+      'ComfyUIAsgASGDrainECSHookFunction179508EE': dict({
         'DependsOn': list([
-          'ASGDrainECSHookFunctionServiceRoleDefaultPolicy16848A27',
-          'ASGDrainECSHookFunctionServiceRoleC12963BB',
+          'ComfyUIAsgASGDrainECSHookFunctionServiceRoleDefaultPolicyE3A3AB42',
+          'ComfyUIAsgASGDrainECSHookFunctionServiceRole65B5DC9E',
         ]),
         'Metadata': dict({
           'cdk_nag': dict({
             'rules_to_suppress': list([
               dict({
                 'id': 'AwsSolutions-L1',
-                'reason': 'Lambda Runtime is provided by custom resource provider and drain ecs hook implicitely and not critical for sample',
+                'reason': 'Custom lambda runtime, implicit ECS drain hook',
               }),
               dict({
                 'id': 'AwsSolutions-SNS2',
-                'reason': 'SNS topic is implicitly created by LifeCycleActions and is not critical for sample purposes.',
+                'reason': 'SNS topic implicit by LifeCycleActions',
               }),
               dict({
                 'id': 'AwsSolutions-SNS3',
-                'reason': 'SNS topic is implicitly created by LifeCycleActions and is not critical for sample purposes.',
+                'reason': 'SNS topic implicit by LifeCycleActions',
               }),
               dict({
                 'id': 'AwsSolutions-AS3',
-                'reason': 'Not all notifications are critical for ComfyUI sample',
+                'reason': 'Not all notifications critical for sample',
               }),
             ]),
           }),
@@ -298,14 +539,14 @@
           'Environment': dict({
             'Variables': dict({
               'CLUSTER': dict({
-                'Ref': 'ComfyUICluster7DD9BFB5',
+                'Ref': 'EcsCluster97242B84',
               }),
             }),
           }),
           'Handler': 'index.lambda_handler',
           'Role': dict({
             'Fn::GetAtt': list([
-              'ASGDrainECSHookFunctionServiceRoleC12963BB',
+              'ComfyUIAsgASGDrainECSHookFunctionServiceRole65B5DC9E',
               'Arn',
             ]),
           }),
@@ -314,25 +555,25 @@
         }),
         'Type': 'AWS::Lambda::Function',
       }),
-      'ASGDrainECSHookFunctionAllowInvokeComfyUIStackASGLifecycleHookDrainHookTopic64055F72E1B043C8': dict({
+      'ComfyUIAsgASGDrainECSHookFunctionAllowInvokeComfyUIStackComfyUIAsgASGLifecycleHookDrainHookTopic4323C42E72155843': dict({
         'Metadata': dict({
           'cdk_nag': dict({
             'rules_to_suppress': list([
               dict({
                 'id': 'AwsSolutions-L1',
-                'reason': 'Lambda Runtime is provided by custom resource provider and drain ecs hook implicitely and not critical for sample',
+                'reason': 'Custom lambda runtime, implicit ECS drain hook',
               }),
               dict({
                 'id': 'AwsSolutions-SNS2',
-                'reason': 'SNS topic is implicitly created by LifeCycleActions and is not critical for sample purposes.',
+                'reason': 'SNS topic implicit by LifeCycleActions',
               }),
               dict({
                 'id': 'AwsSolutions-SNS3',
-                'reason': 'SNS topic is implicitly created by LifeCycleActions and is not critical for sample purposes.',
+                'reason': 'SNS topic implicit by LifeCycleActions',
               }),
               dict({
                 'id': 'AwsSolutions-AS3',
-                'reason': 'Not all notifications are critical for ComfyUI sample',
+                'reason': 'Not all notifications critical for sample',
               }),
             ]),
           }),
@@ -341,36 +582,36 @@
           'Action': 'lambda:InvokeFunction',
           'FunctionName': dict({
             'Fn::GetAtt': list([
-              'ASGDrainECSHookFunction5F24CF4D',
+              'ComfyUIAsgASGDrainECSHookFunction179508EE',
               'Arn',
             ]),
           }),
           'Principal': 'sns.amazonaws.com',
           'SourceArn': dict({
-            'Ref': 'ASGLifecycleHookDrainHookTopicA8AD4ACB',
+            'Ref': 'ComfyUIAsgASGLifecycleHookDrainHookTopic5768B585',
           }),
         }),
         'Type': 'AWS::Lambda::Permission',
       }),
-      'ASGDrainECSHookFunctionServiceRoleC12963BB': dict({
+      'ComfyUIAsgASGDrainECSHookFunctionServiceRole65B5DC9E': dict({
         'Metadata': dict({
           'cdk_nag': dict({
             'rules_to_suppress': list([
               dict({
                 'id': 'AwsSolutions-L1',
-                'reason': 'Lambda Runtime is provided by custom resource provider and drain ecs hook implicitely and not critical for sample',
+                'reason': 'Custom lambda runtime, implicit ECS drain hook',
               }),
               dict({
                 'id': 'AwsSolutions-SNS2',
-                'reason': 'SNS topic is implicitly created by LifeCycleActions and is not critical for sample purposes.',
+                'reason': 'SNS topic implicit by LifeCycleActions',
               }),
               dict({
                 'id': 'AwsSolutions-SNS3',
-                'reason': 'SNS topic is implicitly created by LifeCycleActions and is not critical for sample purposes.',
+                'reason': 'SNS topic implicit by LifeCycleActions',
               }),
               dict({
                 'id': 'AwsSolutions-AS3',
-                'reason': 'Not all notifications are critical for ComfyUI sample',
+                'reason': 'Not all notifications critical for sample',
               }),
             ]),
           }),
@@ -405,25 +646,25 @@
         }),
         'Type': 'AWS::IAM::Role',
       }),
-      'ASGDrainECSHookFunctionServiceRoleDefaultPolicy16848A27': dict({
+      'ComfyUIAsgASGDrainECSHookFunctionServiceRoleDefaultPolicyE3A3AB42': dict({
         'Metadata': dict({
           'cdk_nag': dict({
             'rules_to_suppress': list([
               dict({
                 'id': 'AwsSolutions-L1',
-                'reason': 'Lambda Runtime is provided by custom resource provider and drain ecs hook implicitely and not critical for sample',
+                'reason': 'Custom lambda runtime, implicit ECS drain hook',
               }),
               dict({
                 'id': 'AwsSolutions-SNS2',
-                'reason': 'SNS topic is implicitly created by LifeCycleActions and is not critical for sample purposes.',
+                'reason': 'SNS topic implicit by LifeCycleActions',
               }),
               dict({
                 'id': 'AwsSolutions-SNS3',
-                'reason': 'SNS topic is implicitly created by LifeCycleActions and is not critical for sample purposes.',
+                'reason': 'SNS topic implicit by LifeCycleActions',
               }),
               dict({
                 'id': 'AwsSolutions-AS3',
-                'reason': 'Not all notifications are critical for ComfyUI sample',
+                'reason': 'Not all notifications critical for sample',
               }),
             ]),
           }),
@@ -454,7 +695,7 @@
                       }),
                       ':autoscaling:us-east-1:123456789012:autoScalingGroup:*:autoScalingGroupName/',
                       dict({
-                        'Ref': 'ASG46ED3070',
+                        'Ref': 'ComfyUIAsgASG6C9B9A45',
                       }),
                     ]),
                   ]),
@@ -469,7 +710,7 @@
                   'ArnEquals': dict({
                     'ecs:cluster': dict({
                       'Fn::GetAtt': list([
-                        'ComfyUICluster7DD9BFB5',
+                        'EcsCluster97242B84',
                         'Arn',
                       ]),
                     }),
@@ -487,7 +728,7 @@
                 'Effect': 'Allow',
                 'Resource': dict({
                   'Fn::GetAtt': list([
-                    'ComfyUICluster7DD9BFB5',
+                    'EcsCluster97242B84',
                     'Arn',
                   ]),
                 }),
@@ -501,7 +742,7 @@
                   'ArnEquals': dict({
                     'ecs:cluster': dict({
                       'Fn::GetAtt': list([
-                        'ComfyUICluster7DD9BFB5',
+                        'EcsCluster97242B84',
                         'Arn',
                       ]),
                     }),
@@ -513,34 +754,34 @@
             ]),
             'Version': '2012-10-17',
           }),
-          'PolicyName': 'ASGDrainECSHookFunctionServiceRoleDefaultPolicy16848A27',
+          'PolicyName': 'ComfyUIAsgASGDrainECSHookFunctionServiceRoleDefaultPolicyE3A3AB42',
           'Roles': list([
             dict({
-              'Ref': 'ASGDrainECSHookFunctionServiceRoleC12963BB',
+              'Ref': 'ComfyUIAsgASGDrainECSHookFunctionServiceRole65B5DC9E',
             }),
           ]),
         }),
         'Type': 'AWS::IAM::Policy',
       }),
-      'ASGDrainECSHookFunctionTopicD6FC59F7': dict({
+      'ComfyUIAsgASGDrainECSHookFunctionTopicB7FD71CF': dict({
         'Metadata': dict({
           'cdk_nag': dict({
             'rules_to_suppress': list([
               dict({
                 'id': 'AwsSolutions-L1',
-                'reason': 'Lambda Runtime is provided by custom resource provider and drain ecs hook implicitely and not critical for sample',
+                'reason': 'Custom lambda runtime, implicit ECS drain hook',
               }),
               dict({
                 'id': 'AwsSolutions-SNS2',
-                'reason': 'SNS topic is implicitly created by LifeCycleActions and is not critical for sample purposes.',
+                'reason': 'SNS topic implicit by LifeCycleActions',
               }),
               dict({
                 'id': 'AwsSolutions-SNS3',
-                'reason': 'SNS topic is implicitly created by LifeCycleActions and is not critical for sample purposes.',
+                'reason': 'SNS topic implicit by LifeCycleActions',
               }),
               dict({
                 'id': 'AwsSolutions-AS3',
-                'reason': 'Not all notifications are critical for ComfyUI sample',
+                'reason': 'Not all notifications critical for sample',
               }),
             ]),
           }),
@@ -548,82 +789,82 @@
         'Properties': dict({
           'Endpoint': dict({
             'Fn::GetAtt': list([
-              'ASGDrainECSHookFunction5F24CF4D',
+              'ComfyUIAsgASGDrainECSHookFunction179508EE',
               'Arn',
             ]),
           }),
           'Protocol': 'lambda',
           'TopicArn': dict({
-            'Ref': 'ASGLifecycleHookDrainHookTopicA8AD4ACB',
+            'Ref': 'ComfyUIAsgASGLifecycleHookDrainHookTopic5768B585',
           }),
         }),
         'Type': 'AWS::SNS::Subscription',
       }),
-      'ASGLifecycleHookDrainHookFE4AFEBE': dict({
+      'ComfyUIAsgASGLifecycleHookDrainHookB1CBA2A1': dict({
         'DependsOn': list([
-          'ASGLifecycleHookDrainHookRoleDefaultPolicy3EEFDE57',
-          'ASGLifecycleHookDrainHookRoleD640316C',
+          'ComfyUIAsgASGLifecycleHookDrainHookRoleDefaultPolicyD87E45CF',
+          'ComfyUIAsgASGLifecycleHookDrainHookRole0A21CC07',
         ]),
         'Metadata': dict({
           'cdk_nag': dict({
             'rules_to_suppress': list([
               dict({
                 'id': 'AwsSolutions-L1',
-                'reason': 'Lambda Runtime is provided by custom resource provider and drain ecs hook implicitely and not critical for sample',
+                'reason': 'Custom lambda runtime, implicit ECS drain hook',
               }),
               dict({
                 'id': 'AwsSolutions-SNS2',
-                'reason': 'SNS topic is implicitly created by LifeCycleActions and is not critical for sample purposes.',
+                'reason': 'SNS topic implicit by LifeCycleActions',
               }),
               dict({
                 'id': 'AwsSolutions-SNS3',
-                'reason': 'SNS topic is implicitly created by LifeCycleActions and is not critical for sample purposes.',
+                'reason': 'SNS topic implicit by LifeCycleActions',
               }),
               dict({
                 'id': 'AwsSolutions-AS3',
-                'reason': 'Not all notifications are critical for ComfyUI sample',
+                'reason': 'Not all notifications critical for sample',
               }),
             ]),
           }),
         }),
         'Properties': dict({
           'AutoScalingGroupName': dict({
-            'Ref': 'ASG46ED3070',
+            'Ref': 'ComfyUIAsgASG6C9B9A45',
           }),
           'DefaultResult': 'CONTINUE',
           'HeartbeatTimeout': 300,
           'LifecycleTransition': 'autoscaling:EC2_INSTANCE_TERMINATING',
           'NotificationTargetARN': dict({
-            'Ref': 'ASGLifecycleHookDrainHookTopicA8AD4ACB',
+            'Ref': 'ComfyUIAsgASGLifecycleHookDrainHookTopic5768B585',
           }),
           'RoleARN': dict({
             'Fn::GetAtt': list([
-              'ASGLifecycleHookDrainHookRoleD640316C',
+              'ComfyUIAsgASGLifecycleHookDrainHookRole0A21CC07',
               'Arn',
             ]),
           }),
         }),
         'Type': 'AWS::AutoScaling::LifecycleHook',
       }),
-      'ASGLifecycleHookDrainHookRoleD640316C': dict({
+      'ComfyUIAsgASGLifecycleHookDrainHookRole0A21CC07': dict({
         'Metadata': dict({
           'cdk_nag': dict({
             'rules_to_suppress': list([
               dict({
                 'id': 'AwsSolutions-L1',
-                'reason': 'Lambda Runtime is provided by custom resource provider and drain ecs hook implicitely and not critical for sample',
+                'reason': 'Custom lambda runtime, implicit ECS drain hook',
               }),
               dict({
                 'id': 'AwsSolutions-SNS2',
-                'reason': 'SNS topic is implicitly created by LifeCycleActions and is not critical for sample purposes.',
+                'reason': 'SNS topic implicit by LifeCycleActions',
               }),
               dict({
                 'id': 'AwsSolutions-SNS3',
-                'reason': 'SNS topic is implicitly created by LifeCycleActions and is not critical for sample purposes.',
+                'reason': 'SNS topic implicit by LifeCycleActions',
               }),
               dict({
                 'id': 'AwsSolutions-AS3',
-                'reason': 'Not all notifications are critical for ComfyUI sample',
+                'reason': 'Not all notifications critical for sample',
               }),
             ]),
           }),
@@ -644,25 +885,25 @@
         }),
         'Type': 'AWS::IAM::Role',
       }),
-      'ASGLifecycleHookDrainHookRoleDefaultPolicy3EEFDE57': dict({
+      'ComfyUIAsgASGLifecycleHookDrainHookRoleDefaultPolicyD87E45CF': dict({
         'Metadata': dict({
           'cdk_nag': dict({
             'rules_to_suppress': list([
               dict({
                 'id': 'AwsSolutions-L1',
-                'reason': 'Lambda Runtime is provided by custom resource provider and drain ecs hook implicitely and not critical for sample',
+                'reason': 'Custom lambda runtime, implicit ECS drain hook',
               }),
               dict({
                 'id': 'AwsSolutions-SNS2',
-                'reason': 'SNS topic is implicitly created by LifeCycleActions and is not critical for sample purposes.',
+                'reason': 'SNS topic implicit by LifeCycleActions',
               }),
               dict({
                 'id': 'AwsSolutions-SNS3',
-                'reason': 'SNS topic is implicitly created by LifeCycleActions and is not critical for sample purposes.',
+                'reason': 'SNS topic implicit by LifeCycleActions',
               }),
               dict({
                 'id': 'AwsSolutions-AS3',
-                'reason': 'Not all notifications are critical for ComfyUI sample',
+                'reason': 'Not all notifications critical for sample',
               }),
             ]),
           }),
@@ -674,109 +915,306 @@
                 'Action': 'sns:Publish',
                 'Effect': 'Allow',
                 'Resource': dict({
-                  'Ref': 'ASGLifecycleHookDrainHookTopicA8AD4ACB',
+                  'Ref': 'ComfyUIAsgASGLifecycleHookDrainHookTopic5768B585',
                 }),
               }),
             ]),
             'Version': '2012-10-17',
           }),
-          'PolicyName': 'ASGLifecycleHookDrainHookRoleDefaultPolicy3EEFDE57',
+          'PolicyName': 'ComfyUIAsgASGLifecycleHookDrainHookRoleDefaultPolicyD87E45CF',
           'Roles': list([
             dict({
-              'Ref': 'ASGLifecycleHookDrainHookRoleD640316C',
+              'Ref': 'ComfyUIAsgASGLifecycleHookDrainHookRole0A21CC07',
             }),
           ]),
         }),
         'Type': 'AWS::IAM::Policy',
       }),
-      'ASGLifecycleHookDrainHookTopicA8AD4ACB': dict({
+      'ComfyUIAsgASGLifecycleHookDrainHookTopic5768B585': dict({
         'Metadata': dict({
           'cdk_nag': dict({
             'rules_to_suppress': list([
               dict({
                 'id': 'AwsSolutions-L1',
-                'reason': 'Lambda Runtime is provided by custom resource provider and drain ecs hook implicitely and not critical for sample',
+                'reason': 'Custom lambda runtime, implicit ECS drain hook',
               }),
               dict({
                 'id': 'AwsSolutions-SNS2',
-                'reason': 'SNS topic is implicitly created by LifeCycleActions and is not critical for sample purposes.',
+                'reason': 'SNS topic implicit by LifeCycleActions',
               }),
               dict({
                 'id': 'AwsSolutions-SNS3',
-                'reason': 'SNS topic is implicitly created by LifeCycleActions and is not critical for sample purposes.',
+                'reason': 'SNS topic implicit by LifeCycleActions',
               }),
               dict({
                 'id': 'AwsSolutions-AS3',
-                'reason': 'Not all notifications are critical for ComfyUI sample',
+                'reason': 'Not all notifications critical for sample',
               }),
             ]),
           }),
         }),
         'Type': 'AWS::SNS::Topic',
       }),
-      'AdminFunction09BA95C5': dict({
+      'ComfyUIAsgCPUUtilizationAlarm52ABE1EB': dict({
+        'Properties': dict({
+          'AlarmActions': list([
+            dict({
+              'Ref': 'ComfyUIAsgScalingActionCEAE1760',
+            }),
+          ]),
+          'ComparisonOperator': 'LessThanThreshold',
+          'DatapointsToAlarm': 60,
+          'Dimensions': list([
+            dict({
+              'Name': 'AutoScalingGroupName',
+              'Value': dict({
+                'Ref': 'ComfyUIAsgASG6C9B9A45',
+              }),
+            }),
+          ]),
+          'EvaluationPeriods': 60,
+          'MetricName': 'CPUUtilization',
+          'Namespace': 'AWS/EC2',
+          'Period': 60,
+          'Statistic': 'Average',
+          'Threshold': 1,
+        }),
+        'Type': 'AWS::CloudWatch::Alarm',
+      }),
+      'ComfyUIAsgComfyUIAsgLaunchTemplateEBF610DD': dict({
         'DependsOn': list([
-          'LambdaExecutionRoleDefaultPolicy6D69732F',
-          'LambdaExecutionRoleD5C26073',
+          'ComfyUIAsgComfyUIAsgRoleDefaultPolicy27F87032',
+          'ComfyUIAsgComfyUIAsgRole36425962',
         ]),
         'Properties': dict({
-          'Code': dict({
-            'S3Bucket': 'cdk-hnb659fds-assets-123456789012-us-east-1',
-            'S3Key': '7b527831388d5df68fc57d3ea64cc8f4b2117160e0cf209031c30d50499b5ae6.zip',
-          }),
-          'Environment': dict({
-            'Variables': dict({
-              'ASG_NAME': dict({
-                'Ref': 'ASG46ED3070',
+          'LaunchTemplateData': dict({
+            'BlockDeviceMappings': list([
+              dict({
+                'DeviceName': '/dev/xvda',
+                'Ebs': dict({
+                  'Encrypted': True,
+                  'VolumeSize': 200,
+                }),
               }),
-              'ECS_CLUSTER_NAME': dict({
-                'Ref': 'ComfyUICluster7DD9BFB5',
-              }),
-              'ECS_SERVICE_NAME': dict({
+            ]),
+            'IamInstanceProfile': dict({
+              'Arn': dict({
                 'Fn::GetAtt': list([
-                  'ComfyUIService6B91FEDA',
-                  'Name',
+                  'ComfyUIAsgComfyUIAsgLaunchTemplateProfile28FA6732',
+                  'Arn',
+                ]),
+              }),
+            }),
+            'ImageId': dict({
+              'Ref': 'SsmParameterValueawsserviceecsoptimizedamiamazonlinux2023gpurecommendedimageidC96584B6F00A464EAD1953AFF4B05118Parameter',
+            }),
+            'SecurityGroupIds': list([
+              dict({
+                'Fn::GetAtt': list([
+                  'ComfyUIAsgComfyUIAsgSecurityGroupE45FC012',
+                  'GroupId',
+                ]),
+              }),
+            ]),
+            'TagSpecifications': list([
+              dict({
+                'ResourceType': 'instance',
+                'Tags': list([
+                  dict({
+                    'Key': 'Name',
+                    'Value': 'ComfyUIStack/ComfyUIAsg/ComfyUIAsgLaunchTemplate',
+                  }),
+                ]),
+              }),
+              dict({
+                'ResourceType': 'volume',
+                'Tags': list([
+                  dict({
+                    'Key': 'Name',
+                    'Value': 'ComfyUIStack/ComfyUIAsg/ComfyUIAsgLaunchTemplate',
+                  }),
+                ]),
+              }),
+            ]),
+            'UserData': dict({
+              'Fn::Base64': dict({
+                'Fn::Join': list([
+                  '',
+                  list([
+                    '''
+                      #!/bin/bash
+                      #!/bin/bash
+                              echo ECS_CLUSTER=
+                    ''',
+                    dict({
+                      'Ref': 'EcsCluster97242B84',
+                    }),
+                    '''
+                       >> /etc/ecs/ecs.config
+                              REGION=$(curl -s http://169.254.169.254/latest/meta-data/placement/region)
+                              docker plugin install public.ecr.aws/j1l5j1d1/rexray-ebs --grant-all-permissions REXRAY_PREEMPT=true EBS_REGION=$REGION
+                              systemctl restart docker
+                              
+                      echo ECS_CLUSTER=
+                    ''',
+                    dict({
+                      'Ref': 'EcsCluster97242B84',
+                    }),
+                    '''
+                       >> /etc/ecs/ecs.config
+                      sudo iptables --insert FORWARD 1 --in-interface docker+ --destination 169.254.169.254/32 --jump DROP
+                      sudo service iptables save
+                      echo ECS_AWSVPC_BLOCK_IMDS=true >> /etc/ecs/ecs.config
+                    ''',
+                  ]),
                 ]),
               }),
             }),
           }),
-          'Handler': 'admin.handler',
-          'Role': dict({
-            'Fn::GetAtt': list([
-              'LambdaExecutionRoleD5C26073',
-              'Arn',
-            ]),
-          }),
-          'Runtime': 'python3.12',
-          'Timeout': 60,
-        }),
-        'Type': 'AWS::Lambda::Function',
-      }),
-      'AdminFunctionInvoke2UTWxhlfyqbT5FTn5jvgbLgjFfJwzswGk55DU1HY2FBB538B': dict({
-        'Properties': dict({
-          'Action': 'lambda:InvokeFunction',
-          'FunctionName': dict({
-            'Fn::GetAtt': list([
-              'AdminFunction09BA95C5',
-              'Arn',
-            ]),
-          }),
-          'Principal': 'elasticloadbalancing.amazonaws.com',
-        }),
-        'Type': 'AWS::Lambda::Permission',
-      }),
-      'AsgCapacityProvider760D11D9': dict({
-        'Properties': dict({
-          'AutoScalingGroupProvider': dict({
-            'AutoScalingGroupArn': dict({
-              'Ref': 'ASG46ED3070',
+          'TagSpecifications': list([
+            dict({
+              'ResourceType': 'launch-template',
+              'Tags': list([
+                dict({
+                  'Key': 'Name',
+                  'Value': 'ComfyUIStack/ComfyUIAsg/ComfyUIAsgLaunchTemplate',
+                }),
+              ]),
             }),
-            'ManagedTerminationProtection': 'DISABLED',
-          }),
+          ]),
         }),
-        'Type': 'AWS::ECS::CapacityProvider',
+        'Type': 'AWS::EC2::LaunchTemplate',
       }),
-      'AsgSecurityGroupABD137B7': dict({
+      'ComfyUIAsgComfyUIAsgLaunchTemplateProfile28FA6732': dict({
+        'Properties': dict({
+          'Roles': list([
+            dict({
+              'Ref': 'ComfyUIAsgComfyUIAsgRole36425962',
+            }),
+          ]),
+        }),
+        'Type': 'AWS::IAM::InstanceProfile',
+      }),
+      'ComfyUIAsgComfyUIAsgRole36425962': dict({
+        'Properties': dict({
+          'AssumeRolePolicyDocument': dict({
+            'Statement': list([
+              dict({
+                'Action': 'sts:AssumeRole',
+                'Effect': 'Allow',
+                'Principal': dict({
+                  'Service': 'ec2.amazonaws.com',
+                }),
+              }),
+            ]),
+            'Version': '2012-10-17',
+          }),
+          'ManagedPolicyArns': list([
+            dict({
+              'Fn::Join': list([
+                '',
+                list([
+                  'arn:',
+                  dict({
+                    'Ref': 'AWS::Partition',
+                  }),
+                  ':iam::aws:policy/AmazonEC2FullAccess',
+                ]),
+              ]),
+            }),
+            dict({
+              'Fn::Join': list([
+                '',
+                list([
+                  'arn:',
+                  dict({
+                    'Ref': 'AWS::Partition',
+                  }),
+                  ':iam::aws:policy/AmazonSSMManagedInstanceCore',
+                ]),
+              ]),
+            }),
+          ]),
+        }),
+        'Type': 'AWS::IAM::Role',
+      }),
+      'ComfyUIAsgComfyUIAsgRoleDefaultPolicy27F87032': dict({
+        'Properties': dict({
+          'PolicyDocument': dict({
+            'Statement': list([
+              dict({
+                'Action': list([
+                  'ecs:RegisterContainerInstance',
+                  'ecs:DeregisterContainerInstance',
+                  'ecs:DiscoverPollEndpoint',
+                  'ecs:Submit*',
+                  'ecs:Poll',
+                  'ecs:StartTelemetrySession',
+                  'ecr:GetAuthorizationToken',
+                  'ecr:BatchCheckLayerAvailability',
+                  'ecr:GetDownloadUrlForLayer',
+                  'ecr:BatchGetImage',
+                  'logs:CreateLogStream',
+                  'logs:PutLogEvents',
+                ]),
+                'Effect': 'Allow',
+                'Resource': '*',
+              }),
+              dict({
+                'Action': list([
+                  'ecs:DeregisterContainerInstance',
+                  'ecs:RegisterContainerInstance',
+                  'ecs:Submit*',
+                ]),
+                'Effect': 'Allow',
+                'Resource': dict({
+                  'Fn::GetAtt': list([
+                    'EcsCluster97242B84',
+                    'Arn',
+                  ]),
+                }),
+              }),
+              dict({
+                'Action': list([
+                  'ecs:Poll',
+                  'ecs:StartTelemetrySession',
+                ]),
+                'Condition': dict({
+                  'ArnEquals': dict({
+                    'ecs:cluster': dict({
+                      'Fn::GetAtt': list([
+                        'EcsCluster97242B84',
+                        'Arn',
+                      ]),
+                    }),
+                  }),
+                }),
+                'Effect': 'Allow',
+                'Resource': '*',
+              }),
+              dict({
+                'Action': list([
+                  'ecs:DiscoverPollEndpoint',
+                  'ecr:GetAuthorizationToken',
+                  'logs:CreateLogStream',
+                  'logs:PutLogEvents',
+                ]),
+                'Effect': 'Allow',
+                'Resource': '*',
+              }),
+            ]),
+            'Version': '2012-10-17',
+          }),
+          'PolicyName': 'ComfyUIAsgComfyUIAsgRoleDefaultPolicy27F87032',
+          'Roles': list([
+            dict({
+              'Ref': 'ComfyUIAsgComfyUIAsgRole36425962',
+            }),
+          ]),
+        }),
+        'Type': 'AWS::IAM::Policy',
+      }),
+      'ComfyUIAsgComfyUIAsgSecurityGroupE45FC012': dict({
         'Metadata': dict({
           'cdk_nag': dict({
             'rules_to_suppress': list([
@@ -806,307 +1244,25 @@
         }),
         'Type': 'AWS::EC2::SecurityGroup',
       }),
-      'CPUUtilizationAlarm4D91B4D0': dict({
+      'ComfyUIAsgScalingActionCEAE1760': dict({
         'Properties': dict({
-          'AlarmActions': list([
-            dict({
-              'Ref': 'ScalingAction1854E0DB',
-            }),
-          ]),
-          'ComparisonOperator': 'LessThanThreshold',
-          'DatapointsToAlarm': 60,
-          'Dimensions': list([
-            dict({
-              'Name': 'AutoScalingGroupName',
-              'Value': dict({
-                'Ref': 'ASG46ED3070',
-              }),
-            }),
-          ]),
-          'EvaluationPeriods': 60,
-          'MetricName': 'CPUUtilization',
-          'Namespace': 'AWS/EC2',
-          'Period': 60,
-          'Statistic': 'Average',
-          'Threshold': 1,
-        }),
-        'Type': 'AWS::CloudWatch::Alarm',
-      }),
-      'ComfyUIALB1DAC5A97': dict({
-        'DependsOn': list([
-          'CustomVPCPublicSubnet1DefaultRoute3F6B4A61',
-          'CustomVPCPublicSubnet1RouteTableAssociationCB53C136',
-          'CustomVPCPublicSubnet2DefaultRoute00A279CB',
-          'CustomVPCPublicSubnet2RouteTableAssociation7DDF1FE5',
-        ]),
-        'Metadata': dict({
-          'cdk_nag': dict({
-            'rules_to_suppress': list([
-              dict({
-                'id': 'AwsSolutions-EC23',
-                'reason': 'The Security Group and ALB needs to allow 0.0.0.0/0 inbound access for the ALB to be publicly accessible. Additional security is provided via Cognito authentication.',
-              }),
-              dict({
-                'id': 'AwsSolutions-ELB2',
-                'reason': 'Adding access logs requires extra S3 bucket so removing it for sample purposes.',
-              }),
-            ]),
+          'AdjustmentType': 'ChangeInCapacity',
+          'AutoScalingGroupName': dict({
+            'Ref': 'ComfyUIAsgASG6C9B9A45',
           }),
-        }),
-        'Properties': dict({
-          'LoadBalancerAttributes': list([
+          'PolicyType': 'StepScaling',
+          'StepAdjustments': list([
             dict({
-              'Key': 'deletion_protection.enabled',
-              'Value': 'false',
-            }),
-          ]),
-          'Scheme': 'internet-facing',
-          'SecurityGroups': list([
-            dict({
-              'Fn::GetAtt': list([
-                'ALBSecurityGroup29A3BDEF',
-                'GroupId',
-              ]),
-            }),
-          ]),
-          'Subnets': list([
-            dict({
-              'Ref': 'CustomVPCPublicSubnet1Subnet758D3909',
+              'MetricIntervalUpperBound': 1,
+              'ScalingAdjustment': -1,
             }),
             dict({
-              'Ref': 'CustomVPCPublicSubnet2Subnet9CA8FBEB',
-            }),
-          ]),
-          'Type': 'application',
-        }),
-        'Type': 'AWS::ElasticLoadBalancingV2::LoadBalancer',
-      }),
-      'ComfyUIALBListener13444DC1': dict({
-        'Metadata': dict({
-          'cdk_nag': dict({
-            'rules_to_suppress': list([
-              dict({
-                'id': 'AwsSolutions-EC23',
-                'reason': 'The Security Group and ALB needs to allow 0.0.0.0/0 inbound access for the ALB to be publicly accessible. Additional security is provided via Cognito authentication.',
-              }),
-              dict({
-                'id': 'AwsSolutions-ELB2',
-                'reason': 'Adding access logs requires extra S3 bucket so removing it for sample purposes.',
-              }),
-            ]),
-          }),
-        }),
-        'Properties': dict({
-          'Certificates': list([
-            dict({
-              'CertificateArn': dict({
-                'Ref': 'SelfSignedCertCustomResource',
-              }),
-            }),
-          ]),
-          'DefaultActions': list([
-            dict({
-              'TargetGroupArn': dict({
-                'Ref': 'EcsTargetGroup06D481F9',
-              }),
-              'Type': 'forward',
-            }),
-          ]),
-          'LoadBalancerArn': dict({
-            'Ref': 'ComfyUIALB1DAC5A97',
-          }),
-          'Port': 443,
-          'Protocol': 'HTTPS',
-        }),
-        'Type': 'AWS::ElasticLoadBalancingV2::Listener',
-      }),
-      'ComfyUIALBListenerAuthenticateRuleRule8586BA87': dict({
-        'Metadata': dict({
-          'cdk_nag': dict({
-            'rules_to_suppress': list([
-              dict({
-                'id': 'AwsSolutions-EC23',
-                'reason': 'The Security Group and ALB needs to allow 0.0.0.0/0 inbound access for the ALB to be publicly accessible. Additional security is provided via Cognito authentication.',
-              }),
-              dict({
-                'id': 'AwsSolutions-ELB2',
-                'reason': 'Adding access logs requires extra S3 bucket so removing it for sample purposes.',
-              }),
-            ]),
-          }),
-        }),
-        'Properties': dict({
-          'Actions': list([
-            dict({
-              'AuthenticateCognitoConfig': dict({
-                'UserPoolArn': dict({
-                  'Fn::GetAtt': list([
-                    'ComfyUIuserPool52D4ADA1',
-                    'Arn',
-                  ]),
-                }),
-                'UserPoolClientId': dict({
-                  'Ref': 'ComfyUIuserPoolalbappclient47C9BB97',
-                }),
-                'UserPoolDomain': dict({
-                  'Ref': 'ComfyUIuserPooluserpooldomain109F57F1',
-                }),
-              }),
-              'Order': 1,
-              'Type': 'authenticate-cognito',
-            }),
-            dict({
-              'Order': 2,
-              'TargetGroupArn': dict({
-                'Ref': 'EcsTargetGroup06D481F9',
-              }),
-              'Type': 'forward',
-            }),
-          ]),
-          'Conditions': list([
-            dict({
-              'Field': 'path-pattern',
-              'PathPatternConfig': dict({
-                'Values': list([
-                  '/*',
-                ]),
-              }),
-            }),
-          ]),
-          'ListenerArn': dict({
-            'Ref': 'ComfyUIALBListener13444DC1',
-          }),
-          'Priority': 30,
-        }),
-        'Type': 'AWS::ElasticLoadBalancingV2::ListenerRule',
-      }),
-      'ComfyUIALBRedirect80To443EB0E6DF8': dict({
-        'Metadata': dict({
-          'cdk_nag': dict({
-            'rules_to_suppress': list([
-              dict({
-                'id': 'AwsSolutions-EC23',
-                'reason': 'The Security Group and ALB needs to allow 0.0.0.0/0 inbound access for the ALB to be publicly accessible. Additional security is provided via Cognito authentication.',
-              }),
-              dict({
-                'id': 'AwsSolutions-ELB2',
-                'reason': 'Adding access logs requires extra S3 bucket so removing it for sample purposes.',
-              }),
-            ]),
-          }),
-        }),
-        'Properties': dict({
-          'DefaultActions': list([
-            dict({
-              'RedirectConfig': dict({
-                'Port': '443',
-                'Protocol': 'HTTPS',
-                'StatusCode': 'HTTP_301',
-              }),
-              'Type': 'redirect',
-            }),
-          ]),
-          'LoadBalancerArn': dict({
-            'Ref': 'ComfyUIALB1DAC5A97',
-          }),
-          'Port': 80,
-          'Protocol': 'HTTP',
-        }),
-        'Type': 'AWS::ElasticLoadBalancingV2::Listener',
-      }),
-      'ComfyUICluster789D947D': dict({
-        'Properties': dict({
-          'CapacityProviders': list([
-            dict({
-              'Ref': 'AsgCapacityProvider760D11D9',
-            }),
-          ]),
-          'Cluster': dict({
-            'Ref': 'ComfyUICluster7DD9BFB5',
-          }),
-          'DefaultCapacityProviderStrategy': list([
-          ]),
-        }),
-        'Type': 'AWS::ECS::ClusterCapacityProviderAssociations',
-      }),
-      'ComfyUICluster7DD9BFB5': dict({
-        'Properties': dict({
-          'ClusterSettings': list([
-            dict({
-              'Name': 'containerInsights',
-              'Value': 'enabled',
+              'MetricIntervalLowerBound': 1,
+              'ScalingAdjustment': 0,
             }),
           ]),
         }),
-        'Type': 'AWS::ECS::Cluster',
-      }),
-      'ComfyUIService6B91FEDA': dict({
-        'DependsOn': list([
-          'ComfyUIALBListenerAuthenticateRuleRule8586BA87',
-          'ComfyUIALBListener13444DC1',
-          'ECSTaskExecutionRoleDefaultPolicyC25F7D27',
-          'ECSTaskExecutionRole911F5A4F',
-        ]),
-        'Properties': dict({
-          'CapacityProviderStrategy': list([
-            dict({
-              'CapacityProvider': dict({
-                'Ref': 'AsgCapacityProvider760D11D9',
-              }),
-              'Weight': 1,
-            }),
-          ]),
-          'Cluster': dict({
-            'Ref': 'ComfyUICluster7DD9BFB5',
-          }),
-          'DeploymentConfiguration': dict({
-            'Alarms': dict({
-              'AlarmNames': list([
-              ]),
-              'Enable': False,
-              'Rollback': False,
-            }),
-            'MaximumPercent': 200,
-            'MinimumHealthyPercent': 0,
-          }),
-          'EnableECSManagedTags': False,
-          'HealthCheckGracePeriodSeconds': 30,
-          'LoadBalancers': list([
-            dict({
-              'ContainerName': 'ComfyUIContainer',
-              'ContainerPort': 8181,
-              'TargetGroupArn': dict({
-                'Ref': 'EcsTargetGroup06D481F9',
-              }),
-            }),
-          ]),
-          'NetworkConfiguration': dict({
-            'AwsvpcConfiguration': dict({
-              'AssignPublicIp': 'DISABLED',
-              'SecurityGroups': list([
-                dict({
-                  'Fn::GetAtt': list([
-                    'ServiceSecurityGroup61DE1A49',
-                    'GroupId',
-                  ]),
-                }),
-              ]),
-              'Subnets': list([
-                dict({
-                  'Ref': 'CustomVPCPrivateSubnet1SubnetBC3416DA',
-                }),
-                dict({
-                  'Ref': 'CustomVPCPrivateSubnet2SubnetA2CC0D16',
-                }),
-              ]),
-            }),
-          }),
-          'SchedulingStrategy': 'REPLICA',
-          'TaskDefinition': dict({
-            'Ref': 'TaskDef54694570',
-          }),
-        }),
-        'Type': 'AWS::ECS::Service',
+        'Type': 'AWS::AutoScaling::ScalingPolicy',
       }),
       'ComfyUIuserPool52D4ADA1': dict({
         'DeletionPolicy': 'Retain',
@@ -2163,6 +2319,12 @@
               ]),
             ]),
           }),
+          'Tags': list([
+            dict({
+              'Key': 'Name',
+              'Value': 'ComfyUIStack/CustomVPC',
+            }),
+          ]),
           'VpcEndpointType': 'Gateway',
           'VpcId': dict({
             'Ref': 'CustomVPC616E3387',
@@ -2195,108 +2357,541 @@
         }),
         'Type': 'AWS::EC2::VPCGatewayAttachment',
       }),
-      'EC2RoleDefaultPolicy64E44857': dict({
+      'EcsCluster72B17558': dict({
         'Properties': dict({
+          'CapacityProviders': list([
+            dict({
+              'Ref': 'EcsConstructEcsConstructComfyCapacityProvider7589814B',
+            }),
+          ]),
+          'Cluster': dict({
+            'Ref': 'EcsCluster97242B84',
+          }),
+          'DefaultCapacityProviderStrategy': list([
+          ]),
+        }),
+        'Type': 'AWS::ECS::ClusterCapacityProviderAssociations',
+      }),
+      'EcsCluster97242B84': dict({
+        'Properties': dict({
+          'ClusterSettings': list([
+            dict({
+              'Name': 'containerInsights',
+              'Value': 'enabled',
+            }),
+          ]),
+        }),
+        'Type': 'AWS::ECS::Cluster',
+      }),
+      'EcsClusterDefaultServiceDiscoveryNamespaceB0971B2F': dict({
+        'Properties': dict({
+          'Name': 'local',
+          'Vpc': dict({
+            'Ref': 'CustomVPC616E3387',
+          }),
+        }),
+        'Type': 'AWS::ServiceDiscovery::PrivateDnsNamespace',
+      }),
+      'EcsConstructEcsConstructComfyCapacityProvider7589814B': dict({
+        'Properties': dict({
+          'AutoScalingGroupProvider': dict({
+            'AutoScalingGroupArn': dict({
+              'Ref': 'ComfyUIAsgASG6C9B9A45',
+            }),
+            'ManagedTerminationProtection': 'DISABLED',
+          }),
+        }),
+        'Type': 'AWS::ECS::CapacityProvider',
+      }),
+      'EcsConstructEcsConstructComfyServiceSecurityGroupC69D4E11': dict({
+        'Metadata': dict({
+          'cdk_nag': dict({
+            'rules_to_suppress': list([
+              dict({
+                'id': 'AwsSolutions-EC23',
+                'reason': 'Allow 0.0.0.0/0 for ALB access via Cognito',
+              }),
+              dict({
+                'id': 'AwsSolutions-ELB2',
+                'reason': 'Omitting access logs for simplicity',
+              }),
+            ]),
+          }),
+        }),
+        'Properties': dict({
+          'GroupDescription': 'ComfyUI ECS Security Group',
+          'SecurityGroupEgress': list([
+            dict({
+              'CidrIp': '0.0.0.0/0',
+              'Description': 'Allow all outbound traffic by default',
+              'IpProtocol': '-1',
+            }),
+          ]),
+          'SecurityGroupIngress': list([
+            dict({
+              'Description': 'Allow traffic to ComfyUI',
+              'FromPort': 8181,
+              'IpProtocol': 'tcp',
+              'SourceSecurityGroupId': dict({
+                'Fn::GetAtt': list([
+                  'ALBSecurityGroup29A3BDEF',
+                  'GroupId',
+                ]),
+              }),
+              'ToPort': 8181,
+            }),
+            dict({
+              'Description': 'Allow inbound traffic on port 8189',
+              'FromPort': 8189,
+              'IpProtocol': 'tcp',
+              'SourceSecurityGroupId': dict({
+                'Fn::GetAtt': list([
+                  'ALBSecurityGroup29A3BDEF',
+                  'GroupId',
+                ]),
+              }),
+              'ToPort': 8189,
+            }),
+            dict({
+              'Description': 'Allow inbound traffic on port 8190',
+              'FromPort': 8190,
+              'IpProtocol': 'tcp',
+              'SourceSecurityGroupId': dict({
+                'Fn::GetAtt': list([
+                  'ALBSecurityGroup29A3BDEF',
+                  'GroupId',
+                ]),
+              }),
+              'ToPort': 8190,
+            }),
+            dict({
+              'Description': 'Allow inbound traffic on port 8191',
+              'FromPort': 8191,
+              'IpProtocol': 'tcp',
+              'SourceSecurityGroupId': dict({
+                'Fn::GetAtt': list([
+                  'ALBSecurityGroup29A3BDEF',
+                  'GroupId',
+                ]),
+              }),
+              'ToPort': 8191,
+            }),
+            dict({
+              'CidrIp': dict({
+                'Fn::GetAtt': list([
+                  'CustomVPC616E3387',
+                  'CidrBlock',
+                ]),
+              }),
+              'Description': 'Allow internal VPC traffic on port 8189',
+              'FromPort': 8189,
+              'IpProtocol': 'tcp',
+              'ToPort': 8189,
+            }),
+            dict({
+              'CidrIp': dict({
+                'Fn::GetAtt': list([
+                  'CustomVPC616E3387',
+                  'CidrBlock',
+                ]),
+              }),
+              'Description': 'Allow internal VPC traffic on port 8190',
+              'FromPort': 8190,
+              'IpProtocol': 'tcp',
+              'ToPort': 8190,
+            }),
+            dict({
+              'CidrIp': dict({
+                'Fn::GetAtt': list([
+                  'CustomVPC616E3387',
+                  'CidrBlock',
+                ]),
+              }),
+              'Description': 'Allow internal VPC traffic on port 8191',
+              'FromPort': 8191,
+              'IpProtocol': 'tcp',
+              'ToPort': 8191,
+            }),
+          ]),
+          'VpcId': dict({
+            'Ref': 'CustomVPC616E3387',
+          }),
+        }),
+        'Type': 'AWS::EC2::SecurityGroup',
+      }),
+      'EcsConstructEcsConstructComfyServiceSecurityGroupfromComfyUIStackALBSecurityGroup3787156581818E8F4F0C': dict({
+        'Properties': dict({
+          'Description': 'Load balancer to target',
+          'FromPort': 8181,
+          'GroupId': dict({
+            'Fn::GetAtt': list([
+              'EcsConstructEcsConstructComfyServiceSecurityGroupC69D4E11',
+              'GroupId',
+            ]),
+          }),
+          'IpProtocol': 'tcp',
+          'SourceSecurityGroupId': dict({
+            'Fn::GetAtt': list([
+              'ALBSecurityGroup29A3BDEF',
+              'GroupId',
+            ]),
+          }),
+          'ToPort': 8181,
+        }),
+        'Type': 'AWS::EC2::SecurityGroupIngress',
+      }),
+      'EcsConstructEcsConstructComfyTaskDefCEA88093': dict({
+        'Metadata': dict({
+          'cdk_nag': dict({
+            'rules_to_suppress': list([
+              dict({
+                'id': 'AwsSolutions-ECS2',
+                'reason': 'AWS_REGION is added automatically',
+              }),
+            ]),
+          }),
+        }),
+        'Properties': dict({
+          'ContainerDefinitions': list([
+            dict({
+              'Environment': list([
+                dict({
+                  'Name': 'AWS_REGION',
+                  'Value': 'us-east-1',
+                }),
+                dict({
+                  'Name': 'COGNITO_USER_POOL_ID',
+                  'Value': dict({
+                    'Ref': 'ComfyUIuserPool52D4ADA1',
+                  }),
+                }),
+                dict({
+                  'Name': 'COGNITO_CLIENT_ID',
+                  'Value': dict({
+                    'Ref': 'ComfyUIuserPoolalbappclient47C9BB97',
+                  }),
+                }),
+                dict({
+                  'Name': 'COMFYUI_S3_BUCKET',
+                  'Value': dict({
+                    'Ref': 'EcsConstructEcsConstructComfyUIBucketAE7FB2B1',
+                  }),
+                }),
+              ]),
+              'Essential': True,
+              'HealthCheck': dict({
+                'Command': list([
+                  'CMD-SHELL',
+                  'curl -f http://localhost:8181/system_stats || exit 1',
+                ]),
+                'Interval': 15,
+                'Retries': 8,
+                'StartPeriod': 30,
+                'Timeout': 10,
+              }),
+              'Image': dict({
+                'Fn::Join': list([
+                  '',
+                  list([
+                    '123456789012.dkr.ecr.us-east-1.',
+                    dict({
+                      'Ref': 'AWS::URLSuffix',
+                    }),
+                    '/cdk-hnb659fds-container-assets-123456789012-us-east-1:ac2a8c3fdddd5b0e4e0eee44111755a5a92b879349bcc64e58ef79c267f06b60',
+                  ]),
+                ]),
+              }),
+              'LogConfiguration': dict({
+                'LogDriver': 'awslogs',
+                'Options': dict({
+                  'awslogs-group': dict({
+                    'Ref': 'EcsConstructEcsConstructLogGroupB5CE295D',
+                  }),
+                  'awslogs-region': 'us-east-1',
+                  'awslogs-stream-prefix': 'comfy-ui',
+                }),
+              }),
+              'MemoryReservation': 15000,
+              'MountPoints': list([
+                dict({
+                  'ContainerPath': '/home/user/opt/ComfyUI',
+                  'ReadOnly': False,
+                  'SourceVolume': 'ComfyUIVolume-ba84ef1e44-20260726000318',
+                }),
+              ]),
+              'Name': 'ComfyUIContainer',
+              'PortMappings': list([
+                dict({
+                  'ContainerPort': 8181,
+                  'HostPort': 8181,
+                  'Protocol': 'tcp',
+                }),
+                dict({
+                  'ContainerPort': 8189,
+                  'HostPort': 8189,
+                  'Protocol': 'tcp',
+                }),
+                dict({
+                  'ContainerPort': 8190,
+                  'HostPort': 8190,
+                  'Protocol': 'tcp',
+                }),
+                dict({
+                  'ContainerPort': 8191,
+                  'HostPort': 8191,
+                  'Protocol': 'tcp',
+                }),
+              ]),
+              'ResourceRequirements': list([
+                dict({
+                  'Type': 'GPU',
+                  'Value': '1',
+                }),
+              ]),
+              'StopTimeout': 90,
+            }),
+          ]),
+          'ExecutionRoleArn': dict({
+            'Fn::GetAtt': list([
+              'EcsConstructEcsConstructECSTaskExecutionRoleA02B0E4B',
+              'Arn',
+            ]),
+          }),
+          'Family': 'ComfyUIStackEcsConstructEcsConstructComfyTaskDef7CE06D12',
+          'NetworkMode': 'awsvpc',
+          'RequiresCompatibilities': list([
+            'EC2',
+          ]),
+          'TaskRoleArn': dict({
+            'Fn::GetAtt': list([
+              'EcsConstructEcsConstructECSTaskExecutionRoleA02B0E4B',
+              'Arn',
+            ]),
+          }),
+          'Volumes': list([
+            dict({
+              'DockerVolumeConfiguration': dict({
+                'Autoprovision': True,
+                'Driver': 'public.ecr.aws/j1l5j1d1/rexray-ebs',
+                'DriverOpts': dict({
+                  'size': '5000',
+                  'volumetype': 'gp3',
+                }),
+                'Scope': 'shared',
+              }),
+              'Name': 'ComfyUIVolume-ba84ef1e44-20260726000318',
+            }),
+          ]),
+        }),
+        'Type': 'AWS::ECS::TaskDefinition',
+      }),
+      'EcsConstructEcsConstructComfyUIBucketAE7FB2B1': dict({
+        'DeletionPolicy': 'Retain',
+        'Metadata': dict({
+          'cdk_nag': dict({
+            'rules_to_suppress': list([
+              dict({
+                'id': 'AwsSolutions-S1',
+                'reason': 'Access logs omitted for simplicity in sample deployment',
+              }),
+            ]),
+          }),
+        }),
+        'Properties': dict({
+          'BucketEncryption': dict({
+            'ServerSideEncryptionConfiguration': list([
+              dict({
+                'ServerSideEncryptionByDefault': dict({
+                  'SSEAlgorithm': 'AES256',
+                }),
+              }),
+            ]),
+          }),
+          'PublicAccessBlockConfiguration': dict({
+            'BlockPublicAcls': True,
+            'BlockPublicPolicy': True,
+            'IgnorePublicAcls': True,
+            'RestrictPublicBuckets': True,
+          }),
+        }),
+        'Type': 'AWS::S3::Bucket',
+        'UpdateReplacePolicy': 'Retain',
+      }),
+      'EcsConstructEcsConstructComfyUIBucketPolicy40BFA3D1': dict({
+        'Metadata': dict({
+          'cdk_nag': dict({
+            'rules_to_suppress': list([
+              dict({
+                'id': 'AwsSolutions-S1',
+                'reason': 'Access logs omitted for simplicity in sample deployment',
+              }),
+            ]),
+          }),
+        }),
+        'Properties': dict({
+          'Bucket': dict({
+            'Ref': 'EcsConstructEcsConstructComfyUIBucketAE7FB2B1',
+          }),
           'PolicyDocument': dict({
             'Statement': list([
               dict({
-                'Action': list([
-                  'ecs:DeregisterContainerInstance',
-                  'ecs:RegisterContainerInstance',
-                  'ecs:Submit*',
+                'Action': 's3:*',
+                'Condition': dict({
+                  'Bool': dict({
+                    'aws:SecureTransport': 'false',
+                  }),
+                }),
+                'Effect': 'Deny',
+                'Principal': dict({
+                  'AWS': '*',
+                }),
+                'Resource': list([
+                  dict({
+                    'Fn::GetAtt': list([
+                      'EcsConstructEcsConstructComfyUIBucketAE7FB2B1',
+                      'Arn',
+                    ]),
+                  }),
+                  dict({
+                    'Fn::Join': list([
+                      '',
+                      list([
+                        dict({
+                          'Fn::GetAtt': list([
+                            'EcsConstructEcsConstructComfyUIBucketAE7FB2B1',
+                            'Arn',
+                          ]),
+                        }),
+                        '/*',
+                      ]),
+                    ]),
+                  }),
                 ]),
-                'Effect': 'Allow',
-                'Resource': dict({
+              }),
+            ]),
+            'Version': '2012-10-17',
+          }),
+        }),
+        'Type': 'AWS::S3::BucketPolicy',
+      }),
+      'EcsConstructEcsConstructComfyUIService0E4FAFD1': dict({
+        'DependsOn': list([
+          'ComfyUIALBListenerAuthenticateRuleRule8586BA87',
+          'ComfyUIALBListener13444DC1',
+          'EcsConstructEcsConstructECSTaskExecutionRoleDefaultPolicyE63D13ED',
+          'EcsConstructEcsConstructECSTaskExecutionRoleA02B0E4B',
+        ]),
+        'Properties': dict({
+          'CapacityProviderStrategy': list([
+            dict({
+              'CapacityProvider': dict({
+                'Ref': 'EcsConstructEcsConstructComfyCapacityProvider7589814B',
+              }),
+              'Weight': 1,
+            }),
+          ]),
+          'Cluster': dict({
+            'Ref': 'EcsCluster97242B84',
+          }),
+          'DeploymentConfiguration': dict({
+            'Alarms': dict({
+              'AlarmNames': list([
+              ]),
+              'Enable': False,
+              'Rollback': False,
+            }),
+            'MaximumPercent': 200,
+            'MinimumHealthyPercent': 0,
+          }),
+          'EnableECSManagedTags': False,
+          'HealthCheckGracePeriodSeconds': 30,
+          'LoadBalancers': list([
+            dict({
+              'ContainerName': 'ComfyUIContainer',
+              'ContainerPort': 8181,
+              'TargetGroupArn': dict({
+                'Ref': 'EcsConstructEcsConstructEcsTargetGroupBB50F379',
+              }),
+            }),
+          ]),
+          'NetworkConfiguration': dict({
+            'AwsvpcConfiguration': dict({
+              'AssignPublicIp': 'DISABLED',
+              'SecurityGroups': list([
+                dict({
                   'Fn::GetAtt': list([
-                    'ComfyUICluster7DD9BFB5',
-                    'Arn',
+                    'EcsConstructEcsConstructComfyServiceSecurityGroupC69D4E11',
+                    'GroupId',
                   ]),
                 }),
-              }),
-              dict({
-                'Action': list([
-                  'ecs:Poll',
-                  'ecs:StartTelemetrySession',
-                ]),
-                'Condition': dict({
-                  'ArnEquals': dict({
-                    'ecs:cluster': dict({
-                      'Fn::GetAtt': list([
-                        'ComfyUICluster7DD9BFB5',
-                        'Arn',
-                      ]),
-                    }),
-                  }),
+              ]),
+              'Subnets': list([
+                dict({
+                  'Ref': 'CustomVPCPrivateSubnet1SubnetBC3416DA',
                 }),
-                'Effect': 'Allow',
-                'Resource': '*',
-              }),
-              dict({
-                'Action': list([
-                  'ecs:DiscoverPollEndpoint',
-                  'ecr:GetAuthorizationToken',
-                  'logs:CreateLogStream',
-                  'logs:PutLogEvents',
-                ]),
-                'Effect': 'Allow',
-                'Resource': '*',
-              }),
-            ]),
-            'Version': '2012-10-17',
+                dict({
+                  'Ref': 'CustomVPCPrivateSubnet2SubnetA2CC0D16',
+                }),
+              ]),
+            }),
           }),
-          'PolicyName': 'EC2RoleDefaultPolicy64E44857',
-          'Roles': list([
+          'PlacementConstraints': list([
             dict({
-              'Ref': 'EC2RoleF978FC1C',
+              'Type': 'distinctInstance',
             }),
           ]),
+          'SchedulingStrategy': 'REPLICA',
+          'ServiceRegistries': list([
+            dict({
+              'RegistryArn': dict({
+                'Fn::GetAtt': list([
+                  'EcsConstructEcsConstructComfyUIServiceCloudmapService3DC6CE42',
+                  'Arn',
+                ]),
+              }),
+            }),
+          ]),
+          'TaskDefinition': dict({
+            'Ref': 'EcsConstructEcsConstructComfyTaskDefCEA88093',
+          }),
         }),
-        'Type': 'AWS::IAM::Policy',
+        'Type': 'AWS::ECS::Service',
       }),
-      'EC2RoleF978FC1C': dict({
+      'EcsConstructEcsConstructComfyUIServiceCloudmapService3DC6CE42': dict({
+        'DependsOn': list([
+          'EcsConstructEcsConstructECSTaskExecutionRoleDefaultPolicyE63D13ED',
+          'EcsConstructEcsConstructECSTaskExecutionRoleA02B0E4B',
+        ]),
         'Properties': dict({
-          'AssumeRolePolicyDocument': dict({
-            'Statement': list([
+          'DnsConfig': dict({
+            'DnsRecords': list([
               dict({
-                'Action': 'sts:AssumeRole',
-                'Effect': 'Allow',
-                'Principal': dict({
-                  'Service': 'ec2.amazonaws.com',
-                }),
+                'TTL': 60,
+                'Type': 'A',
               }),
             ]),
-            'Version': '2012-10-17',
+            'NamespaceId': dict({
+              'Fn::GetAtt': list([
+                'EcsClusterDefaultServiceDiscoveryNamespaceB0971B2F',
+                'Id',
+              ]),
+            }),
+            'RoutingPolicy': 'MULTIVALUE',
           }),
-          'ManagedPolicyArns': list([
-            dict({
-              'Fn::Join': list([
-                '',
-                list([
-                  'arn:',
-                  dict({
-                    'Ref': 'AWS::Partition',
-                  }),
-                  ':iam::aws:policy/AmazonEC2FullAccess',
-                ]),
-              ]),
-            }),
-            dict({
-              'Fn::Join': list([
-                '',
-                list([
-                  'arn:',
-                  dict({
-                    'Ref': 'AWS::Partition',
-                  }),
-                  ':iam::aws:policy/AmazonSSMManagedEC2InstanceDefaultPolicy',
-                ]),
-              ]),
-            }),
-          ]),
+          'HealthCheckCustomConfig': dict({
+            'FailureThreshold': 1,
+          }),
+          'Name': 'comfy',
+          'NamespaceId': dict({
+            'Fn::GetAtt': list([
+              'EcsClusterDefaultServiceDiscoveryNamespaceB0971B2F',
+              'Id',
+            ]),
+          }),
         }),
-        'Type': 'AWS::IAM::Role',
+        'Type': 'AWS::ServiceDiscovery::Service',
       }),
-      'ECSTaskExecutionRole911F5A4F': dict({
+      'EcsConstructEcsConstructECSTaskExecutionRoleA02B0E4B': dict({
         'Properties': dict({
           'AssumeRolePolicyDocument': dict({
             'Statement': list([
@@ -2327,10 +2922,56 @@
         }),
         'Type': 'AWS::IAM::Role',
       }),
-      'ECSTaskExecutionRoleDefaultPolicyC25F7D27': dict({
+      'EcsConstructEcsConstructECSTaskExecutionRoleDefaultPolicyE63D13ED': dict({
         'Properties': dict({
           'PolicyDocument': dict({
             'Statement': list([
+              dict({
+                'Action': list([
+                  'bedrock:InvokeModel',
+                  'bedrock:InvokeModelWithResponseStream',
+                  'bedrock:ListFoundationModels',
+                ]),
+                'Effect': 'Allow',
+                'Resource': '*',
+              }),
+              dict({
+                'Action': list([
+                  's3:GetObject*',
+                  's3:GetBucket*',
+                  's3:List*',
+                  's3:DeleteObject*',
+                  's3:PutObject',
+                  's3:PutObjectLegalHold',
+                  's3:PutObjectRetention',
+                  's3:PutObjectTagging',
+                  's3:PutObjectVersionTagging',
+                  's3:Abort*',
+                ]),
+                'Effect': 'Allow',
+                'Resource': list([
+                  dict({
+                    'Fn::GetAtt': list([
+                      'EcsConstructEcsConstructComfyUIBucketAE7FB2B1',
+                      'Arn',
+                    ]),
+                  }),
+                  dict({
+                    'Fn::Join': list([
+                      '',
+                      list([
+                        dict({
+                          'Fn::GetAtt': list([
+                            'EcsConstructEcsConstructComfyUIBucketAE7FB2B1',
+                            'Arn',
+                          ]),
+                        }),
+                        '/*',
+                      ]),
+                    ]),
+                  }),
+                ]),
+              }),
               dict({
                 'Action': list([
                   'ecr:BatchCheckLayerAvailability',
@@ -2364,7 +3005,7 @@
                 'Effect': 'Allow',
                 'Resource': dict({
                   'Fn::GetAtt': list([
-                    'LogGroupF5B46931',
+                    'EcsConstructEcsConstructLogGroupB5CE295D',
                     'Arn',
                   ]),
                 }),
@@ -2372,22 +3013,21 @@
             ]),
             'Version': '2012-10-17',
           }),
-          'PolicyName': 'ECSTaskExecutionRoleDefaultPolicyC25F7D27',
+          'PolicyName': 'EcsConstructEcsConstructECSTaskExecutionRoleDefaultPolicyE63D13ED',
           'Roles': list([
             dict({
-              'Ref': 'ECSTaskExecutionRole911F5A4F',
+              'Ref': 'EcsConstructEcsConstructECSTaskExecutionRoleA02B0E4B',
             }),
           ]),
         }),
         'Type': 'AWS::IAM::Policy',
       }),
-      'EcsTargetGroup06D481F9': dict({
+      'EcsConstructEcsConstructEcsTargetGroupBB50F379': dict({
         'Properties': dict({
           'HealthCheckEnabled': True,
           'HealthCheckIntervalSeconds': 30,
           'HealthCheckPath': '/system_stats',
           'HealthCheckPort': '8181',
-          'HealthCheckProtocol': 'HTTP',
           'HealthCheckTimeoutSeconds': 5,
           'HealthyThresholdCount': 2,
           'Matcher': dict({
@@ -2408,6 +3048,14 @@
           }),
         }),
         'Type': 'AWS::ElasticLoadBalancingV2::TargetGroup',
+      }),
+      'EcsConstructEcsConstructLogGroupB5CE295D': dict({
+        'DeletionPolicy': 'Delete',
+        'Properties': dict({
+          'RetentionInDays': 731,
+        }),
+        'Type': 'AWS::Logs::LogGroup',
+        'UpdateReplacePolicy': 'Delete',
       }),
       'EcsTaskStateChangeRuleAllowEventRuleComfyUIStackScaleupListenerFunction924D8611FDC01ACA': dict({
         'Properties': dict({
@@ -2435,7 +3083,7 @@
               'clusterArn': list([
                 dict({
                   'Fn::GetAtt': list([
-                    'ComfyUICluster7DD9BFB5',
+                    'EcsCluster97242B84',
                     'Arn',
                   ]),
                 }),
@@ -2569,114 +3217,6 @@
         'Type': 'AWS::Logs::LogGroup',
         'UpdateReplacePolicy': 'Retain',
       }),
-      'HostB4E45AD7': dict({
-        'DependsOn': list([
-          'EC2RoleDefaultPolicy64E44857',
-          'EC2RoleF978FC1C',
-        ]),
-        'Properties': dict({
-          'LaunchTemplateData': dict({
-            'BlockDeviceMappings': list([
-              dict({
-                'DeviceName': '/dev/xvda',
-                'Ebs': dict({
-                  'Encrypted': True,
-                  'VolumeSize': 50,
-                }),
-              }),
-            ]),
-            'IamInstanceProfile': dict({
-              'Arn': dict({
-                'Fn::GetAtt': list([
-                  'HostProfileF5695828',
-                  'Arn',
-                ]),
-              }),
-            }),
-            'ImageId': dict({
-              'Ref': 'SsmParameterValueawsserviceecsoptimizedamiamazonlinux2gpurecommendedimageidC96584B6F00A464EAD1953AFF4B05118Parameter',
-            }),
-            'SecurityGroupIds': list([
-              dict({
-                'Fn::GetAtt': list([
-                  'AsgSecurityGroupABD137B7',
-                  'GroupId',
-                ]),
-              }),
-            ]),
-            'TagSpecifications': list([
-              dict({
-                'ResourceType': 'instance',
-                'Tags': list([
-                  dict({
-                    'Key': 'Name',
-                    'Value': 'ComfyUIStack/Host',
-                  }),
-                ]),
-              }),
-              dict({
-                'ResourceType': 'volume',
-                'Tags': list([
-                  dict({
-                    'Key': 'Name',
-                    'Value': 'ComfyUIStack/Host',
-                  }),
-                ]),
-              }),
-            ]),
-            'UserData': dict({
-              'Fn::Base64': dict({
-                'Fn::Join': list([
-                  '',
-                  list([
-                    '''
-                      #!/bin/bash
-                      
-                                  #!/bin/bash
-                                  REGION=$(curl -s http://169.254.169.254/latest/meta-data/placement/region) 
-                                  docker plugin install public.ecr.aws/j1l5j1d1/rexray-ebs --grant-all-permissions REXRAY_PREEMPT=true EBS_REGION=$REGION
-                                  systemctl restart docker
-                              
-                      echo ECS_CLUSTER=
-                    ''',
-                    dict({
-                      'Ref': 'ComfyUICluster7DD9BFB5',
-                    }),
-                    '''
-                       >> /etc/ecs/ecs.config
-                      sudo iptables --insert FORWARD 1 --in-interface docker+ --destination 169.254.169.254/32 --jump DROP
-                      sudo service iptables save
-                      echo ECS_AWSVPC_BLOCK_IMDS=true >> /etc/ecs/ecs.config
-                    ''',
-                  ]),
-                ]),
-              }),
-            }),
-          }),
-          'TagSpecifications': list([
-            dict({
-              'ResourceType': 'launch-template',
-              'Tags': list([
-                dict({
-                  'Key': 'Name',
-                  'Value': 'ComfyUIStack/Host',
-                }),
-              ]),
-            }),
-          ]),
-        }),
-        'Type': 'AWS::EC2::LaunchTemplate',
-      }),
-      'HostProfileF5695828': dict({
-        'Properties': dict({
-          'Roles': list([
-            dict({
-              'Ref': 'EC2RoleF978FC1C',
-            }),
-          ]),
-        }),
-        'Type': 'AWS::IAM::InstanceProfile',
-      }),
       'LambdaAdminRule2186D2D2': dict({
         'Properties': dict({
           'Actions': list([
@@ -2711,6 +3251,7 @@
               'Field': 'path-pattern',
               'PathPatternConfig': dict({
                 'Values': list([
+                  '/',
                   '/admin',
                 ]),
               }),
@@ -2793,6 +3334,7 @@
                 'Action': list([
                   'ecs:DescribeServices',
                   'ecs:ListTasks',
+                  'ecs:ListServices',
                   'elasticloadbalancing:ModifyListener',
                   'elasticloadbalancing:ModifyRule',
                   'elasticloadbalancing:DescribeRules',
@@ -3075,14 +3617,6 @@
         }),
         'Type': 'AWS::ElasticLoadBalancingV2::TargetGroup',
       }),
-      'LogGroupF5B46931': dict({
-        'DeletionPolicy': 'Delete',
-        'Properties': dict({
-          'RetentionInDays': 731,
-        }),
-        'Type': 'AWS::Logs::LogGroup',
-        'UpdateReplacePolicy': 'Delete',
-      }),
       'RegisterSelfSignedCertCF8717EB': dict({
         'DependsOn': list([
           'RegisterSelfSignedCertServiceRoleDefaultPolicy9D6E796C',
@@ -3091,7 +3625,7 @@
         'Properties': dict({
           'Code': dict({
             'S3Bucket': 'cdk-hnb659fds-assets-123456789012-us-east-1',
-            'S3Key': 'fe803e4400f5ad79c7a8e21c2539cecc0828543481b12f91d584186477c4ef6e.zip',
+            'S3Key': '957f2a6587347cb8fb88078bec89b73e8a1435d19e6c9ad1ad7dc85c071c31fc.zip',
           }),
           'Handler': 'function.lambda_handler',
           'Role': dict({
@@ -3175,19 +3709,19 @@
         'Properties': dict({
           'Code': dict({
             'S3Bucket': 'cdk-hnb659fds-assets-123456789012-us-east-1',
-            'S3Key': '7b527831388d5df68fc57d3ea64cc8f4b2117160e0cf209031c30d50499b5ae6.zip',
+            'S3Key': '2d1d5f493105453e308878a4d8d97e9287535259be1cd883dfc06ca7988c3e9e.zip',
           }),
           'Environment': dict({
             'Variables': dict({
               'ASG_NAME': dict({
-                'Ref': 'ASG46ED3070',
+                'Ref': 'ComfyUIAsgASG6C9B9A45',
               }),
               'ECS_CLUSTER_NAME': dict({
-                'Ref': 'ComfyUICluster7DD9BFB5',
+                'Ref': 'EcsCluster97242B84',
               }),
               'ECS_SERVICE_NAME': dict({
                 'Fn::GetAtt': list([
-                  'ComfyUIService6B91FEDA',
+                  'EcsConstructEcsConstructComfyUIService0E4FAFD1',
                   'Name',
                 ]),
               }),
@@ -3246,7 +3780,7 @@
             'detail': dict({
               'AutoScalingGroupName': list([
                 dict({
-                  'Ref': 'ASG46ED3070',
+                  'Ref': 'ComfyUIAsgASG6C9B9A45',
                 }),
               ]),
             }),
@@ -3280,19 +3814,19 @@
         'Properties': dict({
           'Code': dict({
             'S3Bucket': 'cdk-hnb659fds-assets-123456789012-us-east-1',
-            'S3Key': '7b527831388d5df68fc57d3ea64cc8f4b2117160e0cf209031c30d50499b5ae6.zip',
+            'S3Key': '2d1d5f493105453e308878a4d8d97e9287535259be1cd883dfc06ca7988c3e9e.zip',
           }),
           'Environment': dict({
             'Variables': dict({
               'ASG_NAME': dict({
-                'Ref': 'ASG46ED3070',
+                'Ref': 'ComfyUIAsgASG6C9B9A45',
               }),
               'ECS_CLUSTER_NAME': dict({
-                'Ref': 'ComfyUICluster7DD9BFB5',
+                'Ref': 'EcsCluster97242B84',
               }),
               'ECS_SERVICE_NAME': dict({
                 'Fn::GetAtt': list([
-                  'ComfyUIService6B91FEDA',
+                  'EcsConstructEcsConstructComfyUIService0E4FAFD1',
                   'Name',
                 ]),
               }),
@@ -3331,12 +3865,21 @@
         'Properties': dict({
           'Code': dict({
             'S3Bucket': 'cdk-hnb659fds-assets-123456789012-us-east-1',
-            'S3Key': '7b527831388d5df68fc57d3ea64cc8f4b2117160e0cf209031c30d50499b5ae6.zip',
+            'S3Key': '2d1d5f493105453e308878a4d8d97e9287535259be1cd883dfc06ca7988c3e9e.zip',
           }),
           'Environment': dict({
             'Variables': dict({
               'ASG_NAME': dict({
-                'Ref': 'ASG46ED3070',
+                'Ref': 'ComfyUIAsgASG6C9B9A45',
+              }),
+              'ECS_CLUSTER_NAME': dict({
+                'Ref': 'EcsCluster97242B84',
+              }),
+              'ECS_SERVICE_NAME': dict({
+                'Fn::GetAtt': list([
+                  'EcsConstructEcsConstructComfyUIService0E4FAFD1',
+                  'Name',
+                ]),
               }),
               'LISTENER_RULE_ARN': dict({
                 'Ref': 'LambdaAdminRule2186D2D2',
@@ -3363,19 +3906,19 @@
         'Properties': dict({
           'Code': dict({
             'S3Bucket': 'cdk-hnb659fds-assets-123456789012-us-east-1',
-            'S3Key': '7b527831388d5df68fc57d3ea64cc8f4b2117160e0cf209031c30d50499b5ae6.zip',
+            'S3Key': '2d1d5f493105453e308878a4d8d97e9287535259be1cd883dfc06ca7988c3e9e.zip',
           }),
           'Environment': dict({
             'Variables': dict({
               'ASG_NAME': dict({
-                'Ref': 'ASG46ED3070',
+                'Ref': 'ComfyUIAsgASG6C9B9A45',
               }),
               'ECS_CLUSTER_NAME': dict({
-                'Ref': 'ComfyUICluster7DD9BFB5',
+                'Ref': 'EcsCluster97242B84',
               }),
               'ECS_SERVICE_NAME': dict({
                 'Fn::GetAtt': list([
-                  'ComfyUIService6B91FEDA',
+                  'EcsConstructEcsConstructComfyUIService0E4FAFD1',
                   'Name',
                 ]),
               }),
@@ -3395,26 +3938,6 @@
           'Timeout': 60,
         }),
         'Type': 'AWS::Lambda::Function',
-      }),
-      'ScalingAction1854E0DB': dict({
-        'Properties': dict({
-          'AdjustmentType': 'ChangeInCapacity',
-          'AutoScalingGroupName': dict({
-            'Ref': 'ASG46ED3070',
-          }),
-          'PolicyType': 'StepScaling',
-          'StepAdjustments': list([
-            dict({
-              'MetricIntervalUpperBound': 1,
-              'ScalingAdjustment': -1,
-            }),
-            dict({
-              'MetricIntervalLowerBound': 1,
-              'ScalingAdjustment': 0,
-            }),
-          ]),
-        }),
-        'Type': 'AWS::AutoScaling::ScalingPolicy',
       }),
       'SelfSignedCertCustomResource': dict({
         'DeletionPolicy': 'Delete',
@@ -3445,7 +3968,7 @@
         'Properties': dict({
           'Code': dict({
             'S3Bucket': 'cdk-hnb659fds-assets-123456789012-us-east-1',
-            'S3Key': 'd9861ea7a45affd23e47a614acb2fddc6e45c20a891284c958187dafbf9ee36b.zip',
+            'S3Key': 'bdc104ed9cab1b5b6421713c8155f0b753380595356f710400609664d3635eca.zip',
           }),
           'Description': 'AWS CDK resource provider framework - onEvent (ComfyUIStack/SelfSignedCertCustomResourceProvider)',
           'Environment': dict({
@@ -3531,6 +4054,16 @@
                   }),
                 ]),
               }),
+              dict({
+                'Action': 'lambda:GetFunction',
+                'Effect': 'Allow',
+                'Resource': dict({
+                  'Fn::GetAtt': list([
+                    'RegisterSelfSignedCertCF8717EB',
+                    'Arn',
+                  ]),
+                }),
+              }),
             ]),
             'Version': '2012-10-17',
           }),
@@ -3543,71 +4076,6 @@
         }),
         'Type': 'AWS::IAM::Policy',
       }),
-      'ServiceSecurityGroup61DE1A49': dict({
-        'Metadata': dict({
-          'cdk_nag': dict({
-            'rules_to_suppress': list([
-              dict({
-                'id': 'AwsSolutions-EC23',
-                'reason': 'The Security Group and ALB needs to allow 0.0.0.0/0 inbound access for the ALB to be publicly accessible. Additional security is provided via Cognito authentication.',
-              }),
-              dict({
-                'id': 'AwsSolutions-ELB2',
-                'reason': 'Adding access logs requires extra S3 bucket so removing it for sample purposes.',
-              }),
-            ]),
-          }),
-        }),
-        'Properties': dict({
-          'GroupDescription': 'Security Group for ECS Service',
-          'SecurityGroupEgress': list([
-            dict({
-              'CidrIp': '0.0.0.0/0',
-              'Description': 'Allow all outbound traffic by default',
-              'IpProtocol': '-1',
-            }),
-          ]),
-          'SecurityGroupIngress': list([
-            dict({
-              'Description': 'Allow inbound traffic on port 8181',
-              'FromPort': 8181,
-              'IpProtocol': 'tcp',
-              'SourceSecurityGroupId': dict({
-                'Fn::GetAtt': list([
-                  'ALBSecurityGroup29A3BDEF',
-                  'GroupId',
-                ]),
-              }),
-              'ToPort': 8181,
-            }),
-          ]),
-          'VpcId': dict({
-            'Ref': 'CustomVPC616E3387',
-          }),
-        }),
-        'Type': 'AWS::EC2::SecurityGroup',
-      }),
-      'ServiceSecurityGroupfromComfyUIStackALBSecurityGroup3787156581816D310FEB': dict({
-        'Properties': dict({
-          'Description': 'Load balancer to target',
-          'FromPort': 8181,
-          'GroupId': dict({
-            'Fn::GetAtt': list([
-              'ServiceSecurityGroup61DE1A49',
-              'GroupId',
-            ]),
-          }),
-          'IpProtocol': 'tcp',
-          'SourceSecurityGroupId': dict({
-            'Fn::GetAtt': list([
-              'ALBSecurityGroup29A3BDEF',
-              'GroupId',
-            ]),
-          }),
-          'ToPort': 8181,
-        }),
-        'Type': 'AWS::EC2::SecurityGroupIngress',
-      }),
       'ShutdownFunction1A1D8464': dict({
         'DependsOn': list([
           'LambdaExecutionRoleDefaultPolicy6D69732F',
@@ -3616,12 +4084,15 @@
         'Properties': dict({
           'Code': dict({
             'S3Bucket': 'cdk-hnb659fds-assets-123456789012-us-east-1',
-            'S3Key': '7b527831388d5df68fc57d3ea64cc8f4b2117160e0cf209031c30d50499b5ae6.zip',
+            'S3Key': '2d1d5f493105453e308878a4d8d97e9287535259be1cd883dfc06ca7988c3e9e.zip',
           }),
           'Environment': dict({
             'Variables': dict({
               'ASG_NAME': dict({
-                'Ref': 'ASG46ED3070',
+                'Ref': 'ComfyUIAsgASG6C9B9A45',
+              }),
+              'ECS_CLUSTER_NAME': dict({
+                'Ref': 'EcsCluster97242B84',
               }),
             }),
           }),
@@ -3658,7 +4129,7 @@
         'Properties': dict({
           'Code': dict({
             'S3Bucket': 'cdk-hnb659fds-assets-123456789012-us-east-1',
-            'S3Key': '7b527831388d5df68fc57d3ea64cc8f4b2117160e0cf209031c30d50499b5ae6.zip',
+            'S3Key': '2d1d5f493105453e308878a4d8d97e9287535259be1cd883dfc06ca7988c3e9e.zip',
           }),
           'Environment': dict({
             'Variables': dict({
@@ -3674,7 +4145,7 @@
                     dict({
                       'Ref': 'ComfyUIuserPoolalbappclient47C9BB97',
                     }),
-                    '&logout_uri=https%3A//%24%7BToken%5BTOKEN.1019%5D%7D',
+                    '&logout_uri=https%3A//%24%7BToken%5BTOKEN.1288%5D%7D',
                   ]),
                 ]),
               }),
@@ -3705,135 +4176,6 @@
         }),
         'Type': 'AWS::Lambda::Permission',
       }),
-      'TaskDef54694570': dict({
-        'Metadata': dict({
-          'cdk_nag': dict({
-            'rules_to_suppress': list([
-              dict({
-                'id': 'AwsSolutions-ECS2',
-                'reason': "Recent aws-cdk-lib version adds 'AWS_REGION' environment variable implicitly.",
-              }),
-            ]),
-          }),
-        }),
-        'Properties': dict({
-          'ContainerDefinitions': list([
-            dict({
-              'Environment': list([
-                dict({
-                  'Name': 'AWS_REGION',
-                  'Value': 'us-east-1',
-                }),
-                dict({
-                  'Name': 'COGNITO_USER_POOL_ID',
-                  'Value': dict({
-                    'Ref': 'ComfyUIuserPool52D4ADA1',
-                  }),
-                }),
-                dict({
-                  'Name': 'COGNITO_CLIENT_ID',
-                  'Value': dict({
-                    'Ref': 'ComfyUIuserPoolalbappclient47C9BB97',
-                  }),
-                }),
-                dict({
-                  'Name': 'REDIRECT_URL',
-                  'Value': 'https://main.d3p03cfmx0ddk0.amplifyapp.com',
-                }),
-              ]),
-              'Essential': True,
-              'HealthCheck': dict({
-                'Command': list([
-                  'CMD-SHELL',
-                  'curl -f http://localhost:8181/system_stats || exit 1',
-                ]),
-                'Interval': 15,
-                'Retries': 8,
-                'StartPeriod': 30,
-                'Timeout': 10,
-              }),
-              'Image': dict({
-                'Fn::Join': list([
-                  '',
-                  list([
-                    '123456789012.dkr.ecr.us-east-1.',
-                    dict({
-                      'Ref': 'AWS::URLSuffix',
-                    }),
-                    '/cdk-hnb659fds-container-assets-123456789012-us-east-1:757429407b133334f7c03488bbfba81ebfa9c0330a3e210d15d5f44a5e8fd999',
-                  ]),
-                ]),
-              }),
-              'LogConfiguration': dict({
-                'LogDriver': 'awslogs',
-                'Options': dict({
-                  'awslogs-group': dict({
-                    'Ref': 'LogGroupF5B46931',
-                  }),
-                  'awslogs-region': 'us-east-1',
-                  'awslogs-stream-prefix': 'comfy-ui',
-                }),
-              }),
-              'MemoryReservation': 15000,
-              'MountPoints': list([
-                dict({
-                  'ContainerPath': '/home/user/opt/ComfyUI',
-                  'ReadOnly': False,
-                  'SourceVolume': 'ComfyUIVolume-ba84ef1e44',
-                }),
-              ]),
-              'Name': 'ComfyUIContainer',
-              'PortMappings': list([
-                dict({
-                  'AppProtocol': 'http',
-                  'ContainerPort': 8181,
-                  'HostPort': 8181,
-                  'Name': 'comfyui-port-mapping',
-                  'Protocol': 'tcp',
-                }),
-              ]),
-              'ResourceRequirements': list([
-                dict({
-                  'Type': 'GPU',
-                  'Value': '1',
-                }),
-              ]),
-            }),
-          ]),
-          'ExecutionRoleArn': dict({
-            'Fn::GetAtt': list([
-              'ECSTaskExecutionRole911F5A4F',
-              'Arn',
-            ]),
-          }),
-          'Family': 'ComfyUIStackTaskDefEFAD4BAB',
-          'NetworkMode': 'awsvpc',
-          'RequiresCompatibilities': list([
-            'EC2',
-          ]),
-          'TaskRoleArn': dict({
-            'Fn::GetAtt': list([
-              'ECSTaskExecutionRole911F5A4F',
-              'Arn',
-            ]),
-          }),
-          'Volumes': list([
-            dict({
-              'DockerVolumeConfiguration': dict({
-                'Autoprovision': True,
-                'Driver': 'public.ecr.aws/j1l5j1d1/rexray-ebs',
-                'DriverOpts': dict({
-                  'size': '250',
-                  'volumetype': 'gp3',
-                }),
-                'Scope': 'shared',
-              }),
-              'Name': 'ComfyUIVolume-ba84ef1e44',
-            }),
-          ]),
-        }),
-        'Type': 'AWS::ECS::TaskDefinition',
-      }),
       'UpdateCognitoCallbackUrl': dict({
         'DeletionPolicy': 'Delete',
         'Properties': dict({
@@ -3855,7 +4197,7 @@
         'Properties': dict({
           'Code': dict({
             'S3Bucket': 'cdk-hnb659fds-assets-123456789012-us-east-1',
-            'S3Key': 'ad389d1f9e1a2476ee176568349afc1f525219f7cea4842c50fbad43cae7acd2.zip',
+            'S3Key': '1d4a713beb6b6b886e4ee62ba8dcfb35fc4c3215c3e6a1137f4314263c4673fb.zip',
           }),
           'Environment': dict({
             'Variables': dict({
@@ -3941,7 +4283,7 @@
         'Properties': dict({
           'Code': dict({
             'S3Bucket': 'cdk-hnb659fds-assets-123456789012-us-east-1',
-            'S3Key': 'd9861ea7a45affd23e47a614acb2fddc6e45c20a891284c958187dafbf9ee36b.zip',
+            'S3Key': 'bdc104ed9cab1b5b6421713c8155f0b753380595356f710400609664d3635eca.zip',
           }),
           'Description': 'AWS CDK resource provider framework - onEvent (ComfyUIStack/UpdateCognitoCallbackUrlProvider)',
           'Environment': dict({
@@ -3995,6 +4337,16 @@
                     ]),
                   }),
                 ]),
+              }),
+              dict({
+                'Action': 'lambda:GetFunction',
+                'Effect': 'Allow',
+                'Resource': dict({
+                  'Fn::GetAtt': list([
+                    'UpdateCognitoCallbackUrlFunction0A3FA373',
+                    'Arn',
+                  ]),
+                }),
               }),
             ]),
             'Version': '2012-10-17',

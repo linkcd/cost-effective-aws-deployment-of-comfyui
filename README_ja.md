@@ -9,6 +9,7 @@
 💡 注意: このソリューションでは AWS の費用が発生します。費用に関する詳細情報は、コスト セクションを参照してください。
 
 ![comfy](docs/assets/comfy.png)
+![comfy gallery](docs/assets/comfy_gallery.png)
 
 ## ソリューションの機能
 
@@ -41,7 +42,7 @@
 
 再現性と一貫性を確保するために、このソリューションのデプロイとテストには [Amazon SageMaker Studio Code Editor](https://docs.aws.amazon.com/sagemaker/latest/dg/code-editor.html) の使用をお勧めします。
 
-ℹ️ ローカル開発環境を使用することもできますが、AWS CLI、AWS CDK、Docker が適切に設定されていることを確認する必要があります。
+ℹ️ ローカル開発環境を使用することもできますが、**Python 3.9+、Node.js 20+、AWS CLI、AWS CDK が適切に設定されている**必要があります。
 
 <details>
 <summary>Amazon SageMaker Studio Code Editor での環境設定を (クリックして表示) </summary>
@@ -53,6 +54,16 @@
 
 <details>
 <summary> ローカル環境での環境設定 (クリックして表示) </summary>
+
+このソリューションをローカルにデプロイするには、以下のツールが必要です:
+
+- **[Python 3.9+](https://www.python.org/downloads/)** — CDKアプリケーションとインフラストラクチャコードに必要
+- **[Node.js 20.x 以降](https://nodejs.org/)** — AWS CDK CLI (`npx cdk`) に必要
+- **[AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html)** — AWSアカウント認証とリソース管理用
+- **[AWS CDK](https://docs.aws.amazon.com/cdk/v2/guide/getting_started.html)** — Infrastructure as Code フレームワーク (`npm` でインストール)
+- **[Docker](https://docs.docker.com/engine/install/)** — ComfyUIコンテナイメージのビルド用 (ローカルデプロイのみ; CodeBuild デプロイでは不要)
+- **[GNU Make](https://www.gnu.org/software/make/)** — ビルド自動化用 (macOS/Linuxにはプリインストール; WindowsではWSLを使用)
+- **~20 GB の空きディスク容量** — GPU Dockerイメージのビルド (CUDA + PyTorch + ComfyUI) には大容量が必要
 
 AWS CLI がない場合は、[AWS CLI インストールガイド](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) に従ってください。
 
@@ -76,8 +87,42 @@ aws configure
 
 1. (初回のみ) このリポジトリをクローンします (`git clone https://github.com/aws-samples/cost-effective-aws-deployment-of-comfyui.git`)
 2. (初回のみ) リポジトリのディレクトリに移動します (`cd cost-effective-aws-deployment-of-comfyui`)
-3. (cdk bootstrap をしたことがない場合) Run `make bootstrap` (Minimal [IAM Policy](https://github.com/aws/aws-cdk/wiki/Security-And-Safety-Dev-Guide#policies-for-bootstrapping))
-4. Run `make` を実行しデプロイ (Minimal [IAM Policy](https://github.com/aws/aws-cdk/wiki/Security-And-Safety-Dev-Guide#policies-for-bootstrapping))
+3. (初回のみ) `make setup` を実行 — CodeBuild CI/CD パイプラインを作成します (ローカル Docker 不要)
+4. `make` を実行 — CodeBuild 経由で AWS 上にデプロイします
+
+デプロイ前にターゲットリージョンを設定してください:
+```bash
+export AWS_DEFAULT_REGION=us-west-2  # 好みのリージョン
+make setup
+make deploy
+```
+
+ローカル Docker は不要です。すべてのビルドは CodeBuild で実行されます。
+
+| コマンド | 説明 |
+|---------|------|
+| `make setup` | 初回のみ: CodeBuild インフラを作成 |
+| `make` | CodeBuild 経由でデプロイ (AWS 上で実行) |
+| `make status` | 最新ビルドのステータスを確認 |
+| `make logs` | ビルドログの最後の40行を表示 |
+| `make destroy` | ComfyUI スタックを削除 (CodeBuild は保持) |
+| `make cleanup` | すべてを削除 (ComfyUI + CodeBuild) |
+
+#### オプション B: ローカルデプロイ (Docker または Finch が必要)
+
+マシンから直接デプロイする場合:
+
+```bash
+export AWS_DEFAULT_REGION=us-west-2
+make local-bootstrap   # 初回のみ
+make local-deploy
+```
+
+| コマンド | 説明 |
+|---------|------|
+| `make local-bootstrap` | 初回のみ: CDK をブートストラップ |
+| `make local-deploy` | `cdk deploy` で直接デプロイ (Docker 必要) |
+| `make local-synth` | ローカルで CloudFormation テンプレートを合成 |
 
 Dockerfile のカスタムノードと拡張機能によっては、ComfyUI が使用可能になるまで約 8〜10 分かかります。
 
@@ -108,7 +153,7 @@ arn:aws:cloudformation:[us-east-1]:[your-account-id]:stack/ComfyUIStack/[uuid]
 aws ssm start-session --target "$(aws ec2 describe-instances --filters "Name=tag:Name,Values=ComfyUIStack/Host" "Name=instance-state-name,Values=running" --query 'Reservations[].Instances[].[InstanceId]' --output text)" --region $AWS_DEFAULT_REGION
 
 # 2. コンテナに SSH 接続
-container_id=$(sudo docker container ls --format '{{.ID}} {{.Image}}' | grep 'cdk' | awk '{print $1}')
+container_id=$(sudo docker container ls --format '{{.ID}} {{.Image}}' | grep 'comfyui:latest$' | awk '{print $1}')
 sudo docker exec -it $container_id /bin/bash
 
 # 3. 必要なモデル、lora、controlnet などをインストール (すべてをスクリプトに含めて実行することもできます)
@@ -128,8 +173,11 @@ wget -c https://huggingface.co/ai-forever/Real-ESRGAN/blob/main/RealESRGAN_x2.pt
 ComfyUI の機能を最大限に活用し、シームレスな体験を確保するには、詳細な[ユーザーガイド](docs/USER_GUIDE.md) をご覧ください。このガイドでは、インストールから高度な設定まで、AI 駆動の画像生成の力を簡単に活用するためのすべてのステップを説明しています。
 
 - [拡張機能 (カスタムノード) のインストール](docs/USER_GUIDE.md#installing-extensions-custom-nodes)
+    - [推奨される拡張機能](docs/USER_GUIDE.md#recommended-extensions)
+        - [ComfyUI Workspace Manager](docs/USER_GUIDE.md#comfyui-workspace-manager)
 - [モデルのインストール](docs/USER_GUIDE.md#installing-models)
     - [ComfyUI-Manager の使用](docs/USER_GUIDE.md#using-comfyui-manager)
+    - [他の拡張機能の使用](docs/USER_GUIDE.md#using-other-extensions)
     - [手動インストール](docs/USER_GUIDE.md#manual-installation)
 - [ワークフローの実行](docs/USER_GUIDE.md#running-a-workflow)
 
@@ -145,15 +193,14 @@ ComfyUI の機能を最大限に活用し、シームレスな体験を確保す
     - [サインアップできるメールアドレスのドメインを制限する](docs/DEPLOY_OPTION.md#restrict-the-email-address-domains-that-can-sign-up)
     - [AWS WAF の制限を有効にする](docs/DEPLOY_OPTION.md#enable-aws-waf-restrictions)
         - [IP アドレスの制限](docs/DEPLOY_OPTION.md#ip-address-restrictions)
-        - [Rate limiting](docs/DEPLOY_OPTION.md#rate-limiting)
     - [SAML 認証](docs/DEPLOY_OPTION.md#saml-authentication)
 - [コスト関連の設定](docs/DEPLOY_OPTION.md#cost-related-settings)
     - [スポットインスタンス](docs/DEPLOY_OPTION.md#spot-instance)
     - [自動/スケジュールでスケールダウン](docs/DEPLOY_OPTION.md#scale-down-automatically--on-schedule)
     - [NAT ゲートウェイの代わりに NAT インスタンスを使用する](docs/DEPLOY_OPTION.md#use-nat-insatnce-instead-of-nat-gateway)
-- [監視と通知](docs/DEPLOY_OPTION.md#monitoring-and-notifications)
-    - [Slack Integration](docs/DEPLOY_OPTION.md#slack-integration)
 - [カスタムドメインの使用](docs/DEPLOY_OPTION.md#using-a-custom-domain)
+- [監視と通知](docs/DEPLOY_OPTION.md#monitoring-and-notifications)
+    - [Slack 連携](docs/DEPLOY_OPTION.md#slack-integration)
 
 ### デプロイメントを削除してリソースをクリーンアップする
 
@@ -201,12 +248,12 @@ npx cdk destroy
 
 #### フレキシブルなワークロード (デフォルト)
 
-ビジネス上重要でない作業負荷の場合、このタイプのアプリケーションの大半に該当すると思われますが、スポットインスタンスを使用してコスト削減の恩恵を受けることができます。スポットインスタンスは、`g4dn.xlarge` インスタンスタイプで平均 71% (us-east-1、2024 年 10 月) の割引を提供します。さらに、NAT ゲートウェイを NAT インスタンスに置き換えることで、コストをさらに削減できます。
+ビジネス上重要でない作業負荷の場合、このタイプのアプリケーションの大半に該当すると思われますが、スポットインスタンスを使用してコスト削減の恩恵を受けることができます。スポットインスタンスは、`g4dn.xlarge`、`g5.xlarge`、`g6.xlarge` などのGPUインスタンスタイプで通常60〜90%のコスト削減を提供します。実際の割引率はインスタンスタイプ、リージョン、可用性によって異なります — 最新のデータについては [AWS Spot Instance Advisor](https://aws.amazon.com/ec2/spot/instance-advisor/) をご確認ください。さらに、NAT ゲートウェイを NAT インスタンスに置き換えることで、コストをさらに削減できます。
 
 コスト見積もりの前提条件は次のとおりです。
 
 - AWS フリーティアのサービスは含まれていません。
-- インスタンスタイプ : `g4dn.xlarge` (4 vCPU、16 GiB メモリ、1 Nvidia T4 Tensor Core GPU)、スポットインスタンス (71% 割引)。
+- インスタンスタイプ : `g4dn.xlarge` (4 vCPU、16 GiB メモリ、1 Nvidia T4 Tensor Core GPU)、スポットインスタンス (推定約70%割引、実際の割引率はリージョンや時間帯により異なります)。
 - 250 GB SSD ストレージ。
 - 1 Application Load Balancer。
 - NAT インスタンスを備えた VPC。

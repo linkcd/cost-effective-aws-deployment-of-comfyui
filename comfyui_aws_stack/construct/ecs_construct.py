@@ -1,27 +1,23 @@
 from aws_cdk import (
     aws_ecs as ecs,
     aws_ec2 as ec2,
+    aws_servicediscovery as servicediscovery,
     aws_ecr_assets as ecr_assets,
     aws_logs as logs,
     aws_iam as iam,
     aws_cognito as cognito,
     aws_autoscaling as autoscaling,
     aws_elasticloadbalancingv2 as elbv2,
+    aws_s3 as s3,
+    aws_sns as sns,
     aws_cloudwatch as cloudwatch,
     aws_cloudwatch_actions as cloudwatch_actions,
-    aws_sns as sns,
-    aws_sns_subscriptions as sns_subscriptions,
-    aws_chatbot as chatbot,
-    aws_lambda as lambda_,
-    aws_events as events,
-    aws_events_targets as events_targets,
-    aws_kms as kms,
     Duration,
     RemovalPolicy,
-    Size,
 )
 from constructs import Construct
 from cdk_nag import NagSuppressions
+import datetime
 
 
 class EcsConstruct(Construct):
@@ -31,217 +27,258 @@ class EcsConstruct(Construct):
     ecs_health_topic: sns.Topic
 
     def __init__(
-            self,
-            scope: Construct,
-            construct_id: str,
-            vpc: ec2.Vpc,
-            auto_scaling_group: autoscaling.AutoScalingGroup,
-            alb_security_group: ec2.SecurityGroup,
-            is_sagemaker_studio: bool,
-            suffix: str,
-            region: str,
-            user_pool: cognito.UserPool,
-            user_pool_client: cognito.UserPoolClient,
-            instance_types: list,
-            slack_workspace_id: str = None,
-            slack_channel_id: str = None,
-            **kwargs) -> None:
+        self,
+        scope: Construct,
+        construct_id: str,
+        vpc: ec2.Vpc,
+        comfy_asg: autoscaling.AutoScalingGroup,
+        alb_security_group: ec2.SecurityGroup,
+        is_sagemaker_studio: bool,
+        suffix: str,
+        region: str,
+        user_pool: cognito.UserPool,
+        user_pool_client: cognito.UserPoolClient,
+        cluster: ecs.Cluster,
+        slack_workspace_id: str = None,
+        slack_channel_id: str = None,
+        **kwargs,
+    ) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
-        # Create an ECS Cluster
-        cluster = ecs.Cluster(
-            scope, "ComfyUICluster",
-            vpc=vpc,
-            container_insights=True
-        )
-
-        # Create ASG Capacity Provider for the ECS Cluster
-        capacity_provider = ecs.AsgCapacityProvider(
-            scope, "AsgCapacityProvider",
-            auto_scaling_group=auto_scaling_group,
-            enable_managed_scaling=False,  # Enable managed scaling
-            # Disable managed termination protection
+        # === Capacity Providers ===
+        comfy_capacity_provider = ecs.AsgCapacityProvider(
+            self,
+            f"{construct_id}ComfyCapacityProvider",
+            auto_scaling_group=comfy_asg,
+            enable_managed_scaling=False,
             enable_managed_termination_protection=False,
-            target_capacity_percent=100
+            target_capacity_percent=100,
         )
 
-        cluster.add_asg_capacity_provider(capacity_provider)
 
-        # Create IAM Role for ECS Task Execution
+        cluster.add_asg_capacity_provider(comfy_capacity_provider)
+
+        # === S3 Bucket for ComfyUI file storage ===
+        comfyui_bucket = s3.Bucket(
+            self,
+            f"{construct_id}ComfyUIBucket",
+            encryption=s3.BucketEncryption.S3_MANAGED,
+            block_public_access=s3.BlockPublicAccess.BLOCK_ALL,
+            enforce_ssl=True,
+            removal_policy=RemovalPolicy.RETAIN,
+            auto_delete_objects=False,
+        )
+
+        # === IAM Role for Task Execution ===
         task_exec_role = iam.Role(
-            scope,
-            "ECSTaskExecutionRole",
+            self,
+            f"{construct_id}ECSTaskExecutionRole",
             assumed_by=iam.ServicePrincipal("ecs-tasks.amazonaws.com"),
             managed_policies=[
                 iam.ManagedPolicy.from_aws_managed_policy_name(
                     "service-role/AmazonECSTaskExecutionRolePolicy"
-                )
+                ),
             ],
         )
 
-        # ECR Repository
-        docker_image_asset = ecr_assets.DockerImageAsset(
-            scope,
-            "ComfyUIImage",
-            directory="comfyui_aws_stack/docker",
-            platform=ecr_assets.Platform.LINUX_AMD64,
-            network_mode=ecr_assets.NetworkMode.custom(
-                "sagemaker") if is_sagemaker_studio else None
-        )
+        # Bedrock access for ComfyUI custom nodes
+        task_exec_role.add_to_policy(iam.PolicyStatement(
+            actions=[
+                "bedrock:InvokeModel",
+                "bedrock:InvokeModelWithResponseStream",
+                "bedrock:ListFoundationModels",
+            ],
+            resources=["*"]
+        ))
 
-        # CloudWatch Logs Group
+        # S3 access for file storage
+        comfyui_bucket.grant_read_write(task_exec_role)
+
+        # === Log Group ===
         log_group = logs.LogGroup(
-            scope,
-            "LogGroup",
+            self,
+            f"{construct_id}LogGroup",
             removal_policy=RemovalPolicy.DESTROY,
         )
 
-        # Docker Volume Configuration
-        volume = ecs.Volume(
-            name="ComfyUIVolume-" + suffix,
+        # === ComfyUI Docker Image Asset ===
+        docker_image_asset = ecr_assets.DockerImageAsset(
+            self,
+            f"{construct_id}ComfyUIImage",
+            directory="comfyui_aws_stack/docker",
+            platform=ecr_assets.Platform.LINUX_AMD64,
+            network_mode=ecr_assets.NetworkMode.custom("sagemaker") if is_sagemaker_studio else None,
+        )
+
+        # Use timestamp suffix to ensure a new volume name on redeployment
+        unique_suffix = suffix + "-" + datetime.datetime.utcnow().strftime("%Y%m%d%H%M%S")
+        
+        comfy_volume = ecs.Volume(
+            name="ComfyUIVolume-" + unique_suffix,
             docker_volume_configuration=ecs.DockerVolumeConfiguration(
                 scope=ecs.Scope.SHARED,
                 driver="public.ecr.aws/j1l5j1d1/rexray-ebs",
                 driver_opts={
                     "volumetype": "gp3",
-                    "size": "250"  # Size in GiB
+                    "size": "5000"  # Size in GiB
                 },
                 autoprovision=True
             )
-        )
+        )        
 
-        task_definition = ecs.Ec2TaskDefinition(
-            scope,
-            "TaskDef",
+        # === ComfyUI Task Definition ===
+        comfy_task_definition = ecs.Ec2TaskDefinition(
+            self,
+            f"{construct_id}ComfyTaskDef",
             network_mode=ecs.NetworkMode.AWS_VPC,
             task_role=task_exec_role,
             execution_role=task_exec_role,
-            volumes=[volume]
+            volumes=[comfy_volume],
         )
 
-        # Linux parameters for swap configuration
-        linux_parameters = ecs.LinuxParameters(
-            self,
-            "LinuxParameters",
-            max_swap=Size.mebibytes(10240),  # 10GB swap memory (10 * 1024 MiB)
-            swappiness=60    # Default swappiness value
-        )
-
-        # Determine memory reservation based on instance types
-        # Get max memory from instance types (simplified mapping)
-        instance_memory_map = {
-            "g4dn.xlarge": 16384, "g4dn.2xlarge": 32768, "g4dn.4xlarge": 65536,
-            "g5.xlarge": 16384, "g5.2xlarge": 32768, "g5.4xlarge": 65536,
-            "g6.xlarge": 16384, "g6.2xlarge": 32768, "g6.4xlarge": 65536,
-            "g6e.xlarge": 32768, "g6e.2xlarge": 65536, "g6e.4xlarge": 131072,
-        }
-        max_memory = min([instance_memory_map.get(it, 16384) for it in instance_types])
-        memory_reservation = int(max_memory * 0.9)  # Use 90% of available memory
-
-        # Add container to the task definition
-        container = task_definition.add_container(
+        comfy_container = comfy_task_definition.add_container(
             "ComfyUIContainer",
             image=ecs.ContainerImage.from_ecr_repository(
                 docker_image_asset.repository,
-                docker_image_asset.image_tag
+                docker_image_asset.image_tag,
             ),
             gpu_count=1,
-            memory_reservation_mib=memory_reservation,
-            linux_parameters=linux_parameters,
-            logging=ecs.LogDriver.aws_logs(
-                stream_prefix="comfy-ui", log_group=log_group),
+            memory_reservation_mib=15000,
+            stop_timeout=Duration.seconds(90),
+            logging=ecs.LogDriver.aws_logs(stream_prefix="comfy-ui", log_group=log_group),
             health_check=ecs.HealthCheck(
-                command=[
-                    "CMD-SHELL", "curl -f http://localhost:8181/system_stats || exit 1"],
+                command=["CMD-SHELL", "curl -f http://localhost:8181/system_stats || exit 1"],
                 interval=Duration.seconds(15),
                 timeout=Duration.seconds(10),
                 retries=8,
-                start_period=Duration.seconds(30)
+                start_period=Duration.seconds(30),
             ),
             environment={
                 "AWS_REGION": region,
                 "COGNITO_USER_POOL_ID": user_pool.user_pool_id,
                 "COGNITO_CLIENT_ID": user_pool_client.user_pool_client_id,
-                # Add other env variables here
-            }
+                "COMFYUI_S3_BUCKET": comfyui_bucket.bucket_name,
+            },
         )
 
-        # Mount the host volume to the container
-        container.add_mount_points(
+        comfy_container.add_mount_points(
             ecs.MountPoint(
                 container_path="/home/user/opt/ComfyUI",
-                source_volume=volume.name,
-                read_only=False
+                source_volume=comfy_volume.name,
+                read_only=False,
             )
         )
 
-        # Port mappings for the container
-        container.add_port_mappings(
-            ecs.PortMapping(
-                container_port=8181,
-                host_port=8181,
-                app_protocol=ecs.AppProtocol.http,
-                name="comfyui-port-mapping",
-                protocol=ecs.Protocol.TCP,
-            )
+        # comfy_container.add_port_mappings(
+        #     ecs.PortMapping(container_port=8181, host_port=8181, protocol=ecs.Protocol.TCP)
+        # )
+        comfy_container.add_port_mappings(
+            ecs.PortMapping(container_port=8181, host_port=8181, protocol=ecs.Protocol.TCP),
+            ecs.PortMapping(container_port=8189, host_port=8189, protocol=ecs.Protocol.TCP),
+            ecs.PortMapping(container_port=8190, host_port=8190, protocol=ecs.Protocol.TCP),
+            ecs.PortMapping(container_port=8191, host_port=8191, protocol=ecs.Protocol.TCP),
         )
 
-        # Create ECS Service Security Group
-        service_security_group = ec2.SecurityGroup(
-            scope,
-            "ServiceSecurityGroup",
+        comfy_sg = ec2.SecurityGroup(
+            self,
+            f"{construct_id}ComfyServiceSecurityGroup",
             vpc=vpc,
-            description="Security Group for ECS Service",
+            description="ComfyUI ECS Security Group",
             allow_all_outbound=True,
         )
-
-        # Allow inbound traffic on port 8181
-        service_security_group.add_ingress_rule(
+        comfy_sg.add_ingress_rule(
             ec2.Peer.security_group_id(alb_security_group.security_group_id),
             ec2.Port.tcp(8181),
-            "Allow inbound traffic on port 8181",
+            "Allow traffic to ComfyUI",
         )
 
-        # Create ECS Service
-        service = ecs.Ec2Service(
-            scope,
-            "ComfyUIService",
+        for port in range(8189, 8192):
+            comfy_sg.add_ingress_rule(
+                ec2.Peer.security_group_id(alb_security_group.security_group_id),
+                ec2.Port.tcp(port),
+                f"Allow inbound traffic on port {port}"
+            )
+        
+        # Allow internal access to worker ports only from within VPC CIDR
+        for port in range(8189, 8192):
+            comfy_sg.add_ingress_rule(
+                ec2.Peer.ipv4(vpc.vpc_cidr_block),
+                ec2.Port.tcp(port),
+                f"Allow internal VPC traffic on port {port}"
+            )        
+
+
+        comfy_service = ecs.Ec2Service(
+            self,
+            f"{construct_id}ComfyUIService",
             cluster=cluster,
-            task_definition=task_definition,
-            desired_count=1,
+            task_definition=comfy_task_definition,
             capacity_provider_strategies=[
                 ecs.CapacityProviderStrategy(
-                    capacity_provider=capacity_provider.capacity_provider_name, weight=1
+                    capacity_provider=comfy_capacity_provider.capacity_provider_name,
+                    weight=1,
                 )
             ],
-            security_groups=[service_security_group],
+            placement_constraints=[ecs.PlacementConstraint.distinct_instances()],
+            security_groups=[comfy_sg],
             health_check_grace_period=Duration.seconds(30),
             min_healthy_percent=0,
+            cloud_map_options=ecs.CloudMapOptions(
+                name="comfy",
+                cloud_map_namespace=cluster.default_cloud_map_namespace,
+            ),
         )
 
-        # Add target groups for ECS service
-        ecs_target_group = elbv2.ApplicationTargetGroup(
-            scope,
-            "EcsTargetGroup",
+        comfy_target_group = elbv2.ApplicationTargetGroup(
+            self,
+            f"{construct_id}EcsTargetGroup",
             port=8181,
             vpc=vpc,
             protocol=elbv2.ApplicationProtocol.HTTP,
             target_type=elbv2.TargetType.IP,
             targets=[
-                service.load_balancer_target(
-                    container_name=container.container_name, container_port=8181
-                )],
+                comfy_service.load_balancer_target(
+                    container_name=comfy_container.container_name, container_port=8181
+                )
+            ],
             health_check=elbv2.HealthCheck(
                 enabled=True,
                 path="/system_stats",
                 port="8181",
-                protocol=elbv2.Protocol.HTTP,
-                healthy_http_codes="200",  # Adjust as needed
+                healthy_http_codes="200",
                 interval=Duration.seconds(30),
                 timeout=Duration.seconds(5),
                 unhealthy_threshold_count=3,
                 healthy_threshold_count=2,
-            )
+            ),
+        )
+
+        comfy_service.enable_execute_command = True
+
+        # NagSuppressions - apply carefully to correct resources
+        NagSuppressions.add_resource_suppressions(
+            [alb_security_group, comfy_sg],
+            suppressions=[
+                {"id": "AwsSolutions-EC23", "reason": "Allow 0.0.0.0/0 for ALB access via Cognito"},
+                {"id": "AwsSolutions-ELB2", "reason": "Omitting access logs for simplicity"},
+            ],
+            apply_to_children=True,
+        )
+
+        NagSuppressions.add_resource_suppressions(
+            [comfy_task_definition],
+            suppressions=[
+                {"id": "AwsSolutions-ECS2", "reason": "AWS_REGION is added automatically"},
+            ],
+            apply_to_children=True,
+        )
+
+        NagSuppressions.add_resource_suppressions(
+            [comfyui_bucket],
+            suppressions=[
+                {"id": "AwsSolutions-S1", "reason": "Access logs omitted for simplicity in sample deployment"},
+            ],
+            apply_to_children=True,
         )
 
         # CloudWatch Monitoring and Slack Notifications
@@ -249,7 +286,7 @@ class EcsConstruct(Construct):
         if slack_workspace_id and slack_channel_id:
             # Create SNS Topic for ECS Task Health Alerts
             ecs_health_topic = sns.Topic(
-                self, "EcsHealthTopic",
+                self, f"{construct_id}EcsHealthTopic",
                 display_name="ECS Task Health Alerts",
                 enforce_ssl=True
             )
@@ -260,14 +297,14 @@ class EcsConstruct(Construct):
                 metric_name="RunningTaskCount",
                 dimensions_map={
                     "ClusterName": cluster.cluster_name,
-                    "ServiceName": service.service_name
+                    "ServiceName": comfy_service.service_name
                 },
                 period=Duration.minutes(1)
             )
 
             # Alarm when task count is 0
             no_running_tasks_alarm = cloudwatch.Alarm(
-                self, "NoRunningTasksAlarm",
+                self, f"{construct_id}NoRunningTasksAlarm",
                 metric=running_tasks_metric,
                 evaluation_periods=3,
                 threshold=0,
@@ -286,8 +323,7 @@ class EcsConstruct(Construct):
                 namespace="AWS/ApplicationELB",
                 metric_name="UnHealthyHostCount",
                 dimensions_map={
-                    "TargetGroup": ecs_target_group.target_group_arn.split(":")[-1],
-                    # This might need to be adjusted to match your ALB name pattern
+                    "TargetGroup": comfy_target_group.target_group_arn.split(":")[-1],
                     "LoadBalancer": "app/ComfyUIALB"
                 },
                 period=Duration.minutes(1)
@@ -295,7 +331,7 @@ class EcsConstruct(Construct):
 
             # Create alarm for unhealthy hosts
             unhealthy_hosts_alarm = cloudwatch.Alarm(
-                self, "UnhealthyHostsAlarm",
+                self, f"{construct_id}UnhealthyHostsAlarm",
                 metric=target_group_health_metric,
                 evaluation_periods=3,
                 threshold=0,
@@ -310,46 +346,15 @@ class EcsConstruct(Construct):
             )
 
         # Nag
-
         NagSuppressions.add_resource_suppressions(
-            [alb_security_group, service_security_group],
+            [comfy_asg],
             suppressions=[
-                {"id": "AwsSolutions-EC23",
-                 "reason": "The Security Group and ALB needs to allow 0.0.0.0/0 inbound access for the ALB to be publicly accessible. Additional security is provided via Cognito authentication."
-                 },
-                {"id": "AwsSolutions-ELB2",
-                 "reason": "Adding access logs requires extra S3 bucket so removing it for sample purposes."},
+                {"id": "AwsSolutions-L1", "reason": "Custom lambda runtime, implicit ECS drain hook"},
+                {"id": "AwsSolutions-SNS2", "reason": "SNS topic implicit by LifeCycleActions"},
+                {"id": "AwsSolutions-SNS3", "reason": "SNS topic implicit by LifeCycleActions"},
+                {"id": "AwsSolutions-AS3", "reason": "Not all notifications critical for sample"},
             ],
-            apply_to_children=True
-        )
-
-        NagSuppressions.add_resource_suppressions(
-            [task_definition],
-            suppressions=[
-                {"id": "AwsSolutions-ECS2",
-                 "reason": "Recent aws-cdk-lib version adds 'AWS_REGION' environment variable implicitly."
-                 },
-            ],
-            apply_to_children=True
-        )
-
-        NagSuppressions.add_resource_suppressions(
-            [auto_scaling_group],
-            suppressions=[
-                {"id": "AwsSolutions-L1",
-                 "reason": "Lambda Runtime is provided by custom resource provider and drain ecs hook implicitely and not critical for sample"
-                 },
-                {"id": "AwsSolutions-SNS2",
-                 "reason": "SNS topic is implicitly created by LifeCycleActions and is not critical for sample purposes."
-                 },
-                {"id": "AwsSolutions-SNS3",
-                 "reason": "SNS topic is implicitly created by LifeCycleActions and is not critical for sample purposes."
-                 },
-                {"id": "AwsSolutions-AS3",
-                 "reason": "Not all notifications are critical for ComfyUI sample"
-                 }
-            ],
-            apply_to_children=True
+            apply_to_children=True,
         )
 
         if ecs_health_topic:
@@ -365,9 +370,9 @@ class EcsConstruct(Construct):
                 ],
             )
 
-        # Output
-
+        # Export class properties for external access
         self.cluster = cluster
-        self.service = service
-        self.ecs_target_group = ecs_target_group
+        self.service = comfy_service
+        self.ecs_target_group = comfy_target_group
+        self.comfyui_bucket = comfyui_bucket
         self.ecs_health_topic = ecs_health_topic
