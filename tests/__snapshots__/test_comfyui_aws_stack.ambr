@@ -403,6 +403,9 @@
             dict({
               'Ref': 'CustomVPCPrivateSubnet1SubnetBC3416DA',
             }),
+            dict({
+              'Ref': 'CustomVPCPrivateSubnet2SubnetA2CC0D16',
+            }),
           ]),
         }),
         'Type': 'AWS::AutoScaling::AutoScalingGroup',

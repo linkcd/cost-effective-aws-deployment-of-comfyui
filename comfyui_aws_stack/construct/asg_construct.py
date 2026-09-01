@@ -125,7 +125,8 @@ class AsgConstruct(Construct):
             auto_scaling_group_id,
             vpc=vpc,
             vpc_subnets=ec2.SubnetSelection(
-                subnets=[vpc.private_subnets[0]]  # Only one subnet = single AZ
+                # Let Auto Scaling choose any private AZ with capacity.
+                subnet_type=ec2.SubnetType.PRIVATE_WITH_EGRESS,
             ),
             # Use Mixed Instance Policy to increase availability in case capacity is not available.
             mixed_instances_policy=autoscaling.MixedInstancesPolicy(
