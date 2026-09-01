@@ -144,7 +144,9 @@ class EcsConstruct(Construct):
             ),
             gpu_count=1,
             memory_reservation_mib=15000,
-            stop_timeout=Duration.seconds(90),
+            # ComfyUI runs on the only GPU in the ASG, so the replacement task
+            # cannot start until the old container releases it.
+            stop_timeout=Duration.seconds(30),
             logging=ecs.LogDriver.aws_logs(stream_prefix="comfy-ui", log_group=log_group),
             health_check=ecs.HealthCheck(
                 command=["CMD-SHELL", "curl -f http://localhost:8181/system_stats || exit 1"],
@@ -246,11 +248,18 @@ class EcsConstruct(Construct):
                 path="/system_stats",
                 port="8181",
                 healthy_http_codes="200",
-                interval=Duration.seconds(30),
+                interval=Duration.seconds(10),
                 timeout=Duration.seconds(5),
                 unhealthy_threshold_count=3,
                 healthy_threshold_count=2,
             ),
+        )
+        # The ALB default is 300 seconds. A shorter drain substantially reduces
+        # single-GPU task replacement time while still allowing brief requests
+        # and WebSocket connections to finish.
+        comfy_target_group.set_attribute(
+            "deregistration_delay.timeout_seconds",
+            "30",
         )
 
         comfy_service.enable_execute_command = True

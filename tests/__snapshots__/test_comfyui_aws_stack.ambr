@@ -2651,7 +2651,7 @@
                   'Value': '1',
                 }),
               ]),
-              'StopTimeout': 90,
+              'StopTimeout': 30,
             }),
           ]),
           'ExecutionRoleArn': dict({
@@ -3028,7 +3028,7 @@
       'EcsConstructEcsConstructEcsTargetGroupBB50F379': dict({
         'Properties': dict({
           'HealthCheckEnabled': True,
-          'HealthCheckIntervalSeconds': 30,
+          'HealthCheckIntervalSeconds': 10,
           'HealthCheckPath': '/system_stats',
           'HealthCheckPort': '8181',
           'HealthCheckTimeoutSeconds': 5,
@@ -3042,6 +3042,10 @@
             dict({
               'Key': 'stickiness.enabled',
               'Value': 'false',
+            }),
+            dict({
+              'Key': 'deregistration_delay.timeout_seconds',
+              'Value': '30',
             }),
           ]),
           'TargetType': 'ip',

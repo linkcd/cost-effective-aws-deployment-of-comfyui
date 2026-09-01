@@ -249,9 +249,126 @@ Both options delete the CloudFormation stack. The following resources are **reta
 
 ## Notes and Additional Information
 
+### MiniMax H3 Video Generation: AWS Instance Guidance
+
+Last verified: September 1, 2026.
+
+The official [MiniMax H3 repository](https://github.com/MiniMax-AI/MiniMax-H3), [ComfyUI H3 workflow guide](https://docs.comfy.org/tutorials/video/minimax/minimax-h3), and [ComfyUI launch notes](https://blog.comfy.org/p/minimax-h3-day-0-support-in-comfyui) show that H3 is a large video model. ComfyUI's launch notes report approximately 123.6 GB for the full-precision model set and 42.5 GB for the smallest optimized set. Dynamic VRAM offloading can make the optimized workflow run on smaller GPUs, but it shifts pressure to system RAM and is much slower. The official SGLang serving example uses four GPUs.
+
+This stack's ECS task reserves exactly one GPU, so selecting an eight-GPU EC2 instance does not automatically make ComfyUI use all eight GPUs. Multi-GPU serving requires a different task/runtime configuration.
+
+| EC2 instance | GPU | System RAM | Guidance for this stack |
+|--------------|-----|------------|-------------------------|
+| `g6e.2xlarge` | 1 NVIDIA L40S, 48 GB VRAM | 64 GiB | Minimum cost-oriented experiment. Use optimized/quantized H3 Turbo workflows and monitor both host RAM and VRAM. It was not reliable for the investigated H3 workload. |
+| `g6e.4xlarge` | 1 NVIDIA L40S, 48 GB VRAM | 128 GiB | Recommended cost-conscious default. GPU capacity is the same as `g6e.2xlarge`, but the extra host RAM gives model offloading and custom nodes substantially more headroom. |
+| `p5.4xlarge` | 1 NVIDIA H100, 80 GB VRAM | 256 GiB | Recommended single-GPU performance option when quota, availability, and cost allow it. It provides more VRAM, memory bandwidth, and host RAM. |
+| `p5.48xlarge` / `p5en.48xlarge` | 8 H100 / H200 GPUs | Large multi-GPU host | Consider only for a deliberately configured multi-GPU H3 server such as the official SGLang setup. The current ECS task will use only one GPU. |
+
+Instance availability and service quotas vary by Region and Availability Zone. See the official [Amazon EC2 G6e](https://aws.amazon.com/ec2/instance-types/g6e/) and [Amazon EC2 P5](https://aws.amazon.com/ec2/instance-types/p5/) specifications before deployment.
+
+#### Observed `g6e.2xlarge` out-of-memory failure
+
+During the Tokyo deployment investigation, the old ECS task stopped with exit code `137` and:
+
+```text
+OutOfMemoryError: Container killed due to memory usage
+```
+
+This was a host/system-memory OOM, not a confirmed GPU-VRAM OOM:
+
+- The `g6e.2xlarge` host had approximately 63,430 MiB of RAM.
+- The container's `memory_reservation_mib=15000` is a soft scheduling reservation, not a 15 GiB hard limit.
+- Immediately before the failure, logs showed H3 model-resolution/download requests for the H3 VAE, Qwen3-VL text encoder, Turbo LoRA, and diffusion model.
+- The timing does not prove that generation itself caused the OOM, but it confirms that 64 GiB of host RAM did not provide enough headroom for that model-loading path.
+
+For this deployment, start with `g6e.4xlarge` for a cost-conscious H3 setup. Use `p5.4xlarge` when faster generation and greater VRAM/RAM headroom justify the price. Keep `g6e.2xlarge` for controlled tests using the smallest optimized model set, and avoid loading unnecessary models at the same time.
+
+### ComfyUI Model Resolver: `diffusion_models` Issue and Workaround
+
+Last verified: September 1, 2026.
+
+In the investigated deployment, ComfyUI Model Resolver reported:
+
+```text
+Could not find directory for category: diffusion_models
+```
+
+The directory `/home/user/opt/ComfyUI/models/diffusion_models` did exist and contained models such as Wan2.2. Downloads to `loras` and `sams` also worked. The problem was therefore not EBS write permissions or a generally missing models directory.
+
+The installed Model Resolver version was `v1.1.0`. Its diffusion-model category checks these aliases:
+
+```text
+diffusion_models, unet, unet_gguf, model_gguf
+```
+
+The downloader wrapped the complete alias lookup in one error handler. If an optional alias such as `unet_gguf` or `model_gguf` was not registered by ComfyUI, that lookup failed and discarded the valid `diffusion_models` path found earlier. Categories such as `loras` and `sams` did not hit the same missing-alias path, which explains why their downloads succeeded.
+
+#### Workaround applied to the deployed volume
+
+The following directories were created on the persistent ComfyUI EBS volume:
+
+```bash
+mkdir -p /home/user/opt/ComfyUI/models/unet_gguf
+mkdir -p /home/user/opt/ComfyUI/models/model_gguf
+```
+
+These mappings were added under the existing ComfyUI base-path entry in `/home/user/opt/ComfyUI/extra_model_paths.yaml`:
+
+```yaml
+    diffusion_models: models/diffusion_models/
+    unet_gguf: models/unet_gguf/
+    model_gguf: models/model_gguf/
+```
+
+After restarting the ECS task, all three categories resolved successfully. A backup was saved as:
+
+```text
+/home/user/opt/ComfyUI/extra_model_paths.yaml.bak-before-model-resolver-alias-workaround
+```
+
+The whole `/home/user/opt/ComfyUI` path is EBS-backed, so this workaround and installed custom nodes survive normal container/task replacement while the same volume is reused. Reapply or restore it if a redeployment provisions a new data volume.
+
+#### Upstream fix status
+
+The upstream fix is commit [`026ba97c5b1528a79686e77832877bfc7caff0fc`](https://github.com/Azornes/Comfyui-Model-Resolver/commit/026ba97c5b1528a79686e77832877bfc7caff0fc), “Fix model download directory alias resolution.” It was committed immediately after the [`v1.2.0` release tag](https://github.com/Azornes/Comfyui-Model-Resolver/releases/tag/v1.2.0), so installing the official `v1.2.0` tag alone does **not** include the fix. The long-term solution is to install that commit or a later release that contains it; the alias mappings above are the current workaround.
+
+### Provisioned AWS Resources and Their Roles
+
+The EC2 instance types have different jobs:
+
+- The small `t4g.nano` instances are NAT instances when `cheap_vpc=True`. They only give resources in private subnets outbound internet access, for example to download models or contact ECR, Hugging Face, and package repositories. They do **not** run ComfyUI.
+- The GPU instance, `g6e.2xlarge` by default, joins the ECS cluster and runs the ComfyUI Docker container. It can scale to zero when idle.
+- Set `cheap_vpc=False` to use AWS-managed NAT Gateways instead of the `t4g.nano` instances. A NAT Gateway has higher availability and throughput and requires less instance management, but has a higher fixed and data-processing cost.
+
+The VPC does not explicitly cap the NAT count. By CDK default, it can create one NAT instance or NAT Gateway per selected Availability Zone. The exact count therefore depends on the synthesized/deployed AZ context and should be included in the cost estimate.
+
+| Resource | Role |
+|----------|------|
+| VPC and subnets | Creates public and private-with-egress subnets across up to three Availability Zones. The ALB and NAT are public; the GPU/ECS host remains private. |
+| `t4g.nano` NAT instance(s) | Low-cost outbound internet path for private subnets when `cheap_vpc=True`. CDK can create one per selected AZ, and they normally remain running even when GPU compute scales to zero. |
+| S3 gateway VPC endpoint | Keeps supported S3 traffic, including ECR image-layer downloads, off the NAT path. |
+| GPU Auto Scaling Group | Launches the ECS-optimized GPU EC2 host. Defaults to one Spot `g6e.2xlarge`, with minimum 0, desired 1, maximum 1, and an encrypted 200 GiB root volume. It can choose any configured private AZ with capacity. |
+| ECS cluster and capacity provider | Registers the GPU host and schedules the EC2-backed ComfyUI task onto it. |
+| ECS task and service | Runs the ComfyUI Docker image, reserves one GPU, exposes port `8181` plus worker ports `8189`–`8191`, reports health, and replaces failed/stopped tasks. |
+| REX-Ray EBS data volume | Creates a 5,000 GiB gp3 Docker volume mounted at `/home/user/opt/ComfyUI`. Models, custom nodes/plugins, workflows, outputs, and settings persist independently of a container restart. It is created at runtime and requires manual cleanup. |
+| ECR/CDK Docker image asset | Stores the built ComfyUI container image that ECS pulls when starting a task. Files installed only into a container layer are lost on replacement unless added to the image or stored on the mounted EBS path. |
+| S3 data bucket | Retained, encrypted object storage exposed to the task through `COMFYUI_S3_BUCKET`. It is separate from the locally mounted ComfyUI models directory. |
+| Application Load Balancer | Public HTTPS entry point. Redirects HTTP to HTTPS, performs Cognito authentication, forwards ComfyUI traffic to port `8181`, and checks `/system_stats`. |
+| Cognito | Provides the user pool, application client, and hosted authentication domain; optional SAML, MFA, self-sign-up, and email-domain restrictions are supported. |
+| Lambda and EventBridge | Implement admin actions such as scale-up, shutdown, restart, sign-out, and lifecycle handling around ECS/EC2 state changes. |
+| CloudWatch | Stores ECS and VPC Flow Logs, enables Container Insights, and supplies alarms used for idle scale-to-zero and optional notifications. |
+| Optional WAF | Adds IP allowlisting and request-rate limiting in front of the ALB. |
+| ACM and Route 53 | Provide TLS and DNS for a supplied custom domain. Without one, the stack creates and imports a self-signed certificate. |
+| IAM roles and security groups | Allow ECS registration, image pulls, logging, EBS plugin operations, S3 access, SSM access, and tightly scoped network paths between the public ALB and private task. |
+
+The persistent EBS volume remains tied to one Availability Zone even though the GPU Auto Scaling Group can now search multiple AZs for capacity. An existing EBS volume cannot attach to an instance launched in another AZ, so this improves initial capacity selection but does not provide multi-AZ storage or failover.
+
 ### Cost Estimation
 
 This section provides cost estimations for running the application on AWS. Costs vary by instance type, region, Spot market conditions, and usage patterns. Use the [AWS Pricing Calculator](https://calculator.aws/) for precise estimates based on your configuration.
+
+> [!WARNING]
+> The legacy tables below assume 250 GB of SSD storage and one NAT instance. The current CDK requests a 5,000 GiB gp3 data volume plus a 200 GiB GPU-host root volume, and it can create one NAT instance per selected AZ. Recalculate storage and networking costs for the synthesized stack before deployment.
 
 #### Flexible Workload (Default)
 
@@ -337,7 +454,7 @@ This solution supports automatic scale-to-zero to eliminate compute costs during
 > ⚠️ This is a sample deployment intended for personal or non-production use.
 
 - **No EBS backup automation** — The persistent data volume (models, outputs, custom nodes) has no automatic snapshots. If the volume is deleted or corrupted, data is permanently lost. Consider implementing [EBS Snapshots](https://docs.aws.amazon.com/ebs/latest/userguide/ebs-snapshots.html) for important data.
-- **Single Availability Zone** — The EBS volume is AZ-bound. If the instance launches in a different AZ than the volume, the container will fail to mount it. The ASG is configured to use the same AZ as the volume.
+- **EBS volume is Availability Zone-bound** — The GPU ASG can try private subnets across up to three AZs, but an existing REX-Ray EBS volume can attach only in its own AZ. A replacement launched in another AZ may fail to mount it. This is not multi-AZ storage.
 - **No multi-instance scaling** — The ASG max capacity is 1. This solution does not support multiple concurrent users generating images simultaneously.
 - **Spot Instance interruptions** — Spot Instances can be reclaimed by AWS with 2 minutes notice. In-progress image generations will be lost. The instance will be replaced automatically.
 - **ALB idle timeout** — ComfyUI uses WebSockets for generation progress updates. The default ALB idle timeout is 60 seconds. For long-running workflows (SDXL, video generation), increase the timeout via the ALB settings in the AWS Console or by modifying `alb_construct.py` (target: 300+ seconds).
@@ -387,11 +504,11 @@ This sample deployment prioritizes cost and simplicity. The following trade-offs
 - Authentication via Amazon Cognito (user pool or SAML). Optional WAF with IP allowlisting and rate limiting.
 - IAM roles use broad managed policies (see [IAM Roles](#iam-roles-and-permissions)). Not suitable for production without scoping down.
 - EBS root volume is encrypted. The rexray-managed data volume uses gp3 but does not explicitly specify encryption — verify your account-level EBS encryption default.
-- No VPC Flow Logs or ALB access logs are enabled (to reduce cost). Enable for auditing in regulated environments.
+- VPC Flow Logs are enabled. ALB access logs are not enabled; consider enabling them for auditing in regulated environments.
 - cdk-nag (AwsSolutions pack) is run during synth to surface security findings.
 
 **Reliability**
-- Single-AZ deployment. The EBS data volume is AZ-bound; if the AZ has an outage, the service is down until it recovers.
+- GPU capacity can be selected from private subnets across up to three AZs, but the EBS data volume is AZ-bound. This is not true multi-AZ failover, and an instance in another AZ cannot mount the existing volume.
 - No automated EBS snapshots. Data loss is permanent if the volume is deleted.
 - Spot Instance interruptions cause in-progress work to be lost. The ASG replaces the instance automatically.
 - ASG max capacity is 1. No redundancy or failover.
