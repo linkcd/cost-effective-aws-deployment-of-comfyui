@@ -428,26 +428,64 @@ The following assumptions are made for the cost estimation:
 * `npx cdk synth`         emit the synthesized CloudFormation template
 * `npx cdk diff`          compare deployed stack with current state
 
-### Auto-Scaling Behavior
+### Scalability and Cost-Saving Behavior
 
-This solution supports automatic scale-to-zero to eliminate compute costs during idle periods.
+This deployment implements **scale-to-zero**, not horizontal workload scaling. The GPU Auto Scaling Group has minimum capacity `0`, desired capacity `1`, and maximum capacity `1`. The ECS service also runs one task that reserves one GPU. The system can therefore switch between zero and one GPU host, but it cannot add more instances for concurrent users or a larger queue. There is no request-count, queue-depth, or GPU-utilization scale-up policy.
 
-**Scale-down (enabled by default with `auto_scale_down=True`):**
-- A CloudWatch alarm monitors the ASG's average CPU utilization every minute
-- If CPU remains below 1% for 60 consecutive minutes (1 hour idle), the alarm triggers
-- A Step Scaling action reduces the ASG desired capacity to 0, terminating the GPU instance
-- The EBS data volume persists independently (managed by the rexray Docker volume plugin)
+> [!IMPORTANT]
+> The current `app.py` overrides the stack defaults with `auto_scale_down=False` and `use_spot=False`. Therefore, a deployment made from the current file uses an On-Demand GPU instance and does not automatically shut it down after one idle hour. Scheduled scaling is also disabled by default. Manual **Shutdown Services** and **Scale Up** actions remain available.
 
-**Scale-up:**
-- When a user visits the ALB endpoint while the instance is down, the admin Lambda is invoked
-- The Lambda sets the ASG desired capacity back to 1
-- A new GPU Spot Instance launches, registers with ECS, and starts the ComfyUI container
-- Cold start takes approximately 5-8 minutes (instance launch + Docker image pull + ECS task start)
+#### Trigger and Lambda summary
 
-**Scheduled scaling (optional, `schedule_auto_scaling=True`):**
-- Define cron schedules for scale-up and scale-down (e.g., work hours only)
-- Default: scale up at 9:00 AM Mon-Fri, scale down at 6:00 PM daily (UTC)
-- Configure timezone with the `timezone` parameter
+| Trigger or event | Component invoked | Result |
+|------------------|-------------------|--------|
+| Initial stack deployment | Auto Scaling Group; no Lambda | Starts with desired capacity `1`, so a GPU instance is launched. |
+| Open `/` or `/admin` while scaled down | ALB → Cognito → `AdminFunction` Lambda | Displays current ASG/ECS status and a **Scale Up** button. Merely opening or refreshing the page does **not** start the GPU. |
+| Click **Scale Up** (`/admin/scaleup`) | `ScaleUpTriggerFunction` Lambda | Sets ASG desired capacity to `1` if necessary and ensures ECS service desired count is `1`. |
+| ECS task changes to `RUNNING` | EventBridge → `ScaleupListenerFunction` Lambda | If the ASG is at `1` and the ECS service has a running task, changes the ALB admin rule so `/` routes to ComfyUI while `/admin` continues to route to the admin page. |
+| Click **Shutdown Services** (`/admin/shutdown`) | `ShutdownFunction` Lambda | Sets ASG desired capacity to `0` with no cooldown, provided the ASG minimum size is `0`. |
+| Host CPU remains below the idle threshold | CloudWatch alarm → ASG Step Scaling; no Lambda initiates it | When enabled, reduces ASG desired capacity by one, from `1` to `0`. |
+| Scheduled start or stop time | ASG scheduled action; no Lambda | Directly sets desired capacity to `1` or `0`. |
+| ASG instance-termination lifecycle action | EventBridge → `ScaleinListenerFunction` Lambda | After confirming desired capacity is `0` and all ECS services are down, changes the ALB admin rule so both `/` and `/admin` reach the admin page. This Lambda updates routing; it does not initiate shutdown. |
+| Click **Restart Docker** (`/admin/restart`) | `RestartDockerFunction` Lambda → Systems Manager | Restarts Docker on the existing GPU instance. This is a restart operation, not a scale-up or scale-down action. |
+| ASG launch/termination error, when Slack notifications are configured | EventBridge → ASG monitor Lambda → SNS/AWS Chatbot | Sends an error notification. It observes failures but does not change desired capacity. |
+
+All browser-facing admin routes are protected by the configured Cognito authentication.
+
+#### Scale-up sequence
+
+1. While the ASG is at zero, `/admin` reaches the admin Lambda. After a completed scale-in routing update, `/` reaches it as well.
+2. `AdminFunction` reads the ASG desired capacity and ECS desired/running task counts. If everything is down, it displays the **Scale Up** button.
+3. Clicking the button invokes `ScaleUpTriggerFunction`, which sets the ASG desired capacity to `1` and restores the ECS service desired count to `1` if needed. The Lambda then redirects the browser to `/`.
+4. The ASG launches the configured GPU instance, using Spot or On-Demand capacity according to `use_spot`. The instance boots, joins the ECS cluster, pulls the image, mounts the persistent EBS volume, and starts the ComfyUI task.
+5. An ECS `RUNNING` task event invokes `ScaleupListenerFunction`. It changes the ALB rule so `/` can reach the ECS target group. The ALB still uses `/system_stats` health checks to decide whether the target is ready to receive traffic.
+
+The admin page reports that scale-up can take approximately 5–10 minutes and reloads every 30 seconds while it detects a service starting. Actual time depends on EC2 capacity, Spot availability, instance boot, image pull, EBS attachment, plugin startup, and model/custom-node initialization.
+
+#### Scale-down paths
+
+There are three independent ways to request scale-down:
+
+1. **Manual shutdown:** An authenticated user clicks **Shutdown Services**. `ShutdownFunction` immediately requests ASG desired capacity `0`.
+2. **Idle CPU alarm:** When `auto_scale_down=True`, CloudWatch evaluates the GPU host's average EC2 `CPUUtilization` every minute. All 60 of the last 60 datapoints must be below `1%`; the alarm then invokes an ASG Step Scaling policy that subtracts one instance.
+3. **Schedule:** When `schedule_auto_scaling=True`, ASG scheduled actions set desired capacity directly. The defaults are scale-up at 09:00 Monday–Friday and scale-down at 18:00 every day in the configured `timezone`.
+
+The idle detector watches **host CPU**, not GPU utilization, ComfyUI queue state, browser sessions, or active WebSockets. A GPU-heavy workflow with very low CPU use could therefore be considered idle. Scheduled or manual shutdown can also interrupt an active generation. Adjust or disable these mechanisms for unattended long-running video workflows.
+
+When the GPU instance terminates, its ECS task stops and in-progress work is lost. The REX-Ray EBS data volume remains, so models, custom nodes, settings, workflows, and saved outputs survive the next scale-up.
+
+#### Restart and failure recovery
+
+- **Restart Docker** is allowed only when the ASG has exactly one `InService` instance and all ECS services are running. The Lambda sends `sudo systemctl restart docker` through Systems Manager and temporarily restores `/` to the admin route. The ECS service starts the task again, and the `RUNNING` event restores normal root routing.
+- If only the ComfyUI task fails or becomes unhealthy, the ECS service attempts to replace it on the existing GPU host. This does not intentionally change ASG desired capacity.
+- If the EC2 instance fails or a Spot instance is interrupted while desired capacity remains `1`, the ASG attempts to launch a replacement and ECS schedules the task again. This is replacement, not scale-to-zero, and the interrupted generation is not resumed.
+- The shortened container stop timeout, target-group drain delay, and ALB health-check interval reduce task-restart delay. They do not reduce EC2 launch, image-pull, EBS-mount, or ComfyUI initialization time.
+
+#### What scale-to-zero saves
+
+Scaling to zero stops the expensive GPU EC2 instance charge. It does **not** remove the rest of the stack. Charges can continue for the persistent 5,000 GiB gp3 EBS volume, ALB, NAT instance(s) or NAT Gateway(s), S3, CloudWatch, data transfer, and other retained or always-on resources.
+
+Manual and scheduled actions can override each other over time: for example, a manual shutdown remains at zero only until a later scheduled scale-up action sets the ASG back to one.
 
 ### Known Limitations
 
@@ -471,8 +509,6 @@ All parameters are set in `app.py` when instantiating `ComfyUIStack`. See [Deplo
 | `comfyui_instance_type` | `"g6e.2xlarge"` | GPU instance type for ComfyUI |
 | `enable_comfyui` | `True` | Enable ComfyUI ECS deployment |
 | `auto_scale_down` | `True` | Scale to zero after 1 hour of idle (CPU < 1%) |
-
-> **Note:** The defaults above are from `ComfyUIStack`. Your `app.py` may override them (e.g., `use_spot=False` for On-Demand instances during development).
 | `schedule_auto_scaling` | `False` | Enable cron-based scheduled scaling |
 | `timezone` | `"UTC"` | Timezone for scheduled scaling |
 | `schedule_scale_up` | `"0 9 * * 1-5"` | Cron for scale-up (default: 9 AM Mon-Fri) |
@@ -491,6 +527,8 @@ All parameters are set in `app.py` when instantiating `ComfyUIStack`. See [Deplo
 | `hosted_zone_id` | `None` | Route 53 hosted zone ID |
 | `slack_workspace_id` | `None` | Slack workspace ID for notifications (enables ASG/ECS alerts) |
 | `slack_channel_id` | `None` | Slack channel ID for notifications |
+
+> **Note:** The defaults above are from `ComfyUIStack`. Your `app.py` may override them. The current `app.py` sets `use_spot=False`, `auto_scale_down=False`, and `self_sign_up_enabled=True`.
 
 ### Well-Architected Considerations
 
@@ -519,8 +557,8 @@ This sample deployment prioritizes cost and simplicity. The following trade-offs
 - ALB idle timeout defaults to 60 seconds. Increase for long-running generation workflows.
 
 **Cost Optimization**
-- Spot Instances (60-90% savings over On-Demand) enabled by default.
-- Auto scale-to-zero after 1 hour idle eliminates compute costs when not in use.
+- The stack supports Spot Instances, but the current `app.py` sets `use_spot=False` and therefore launches On-Demand GPU capacity.
+- Idle scale-to-zero is available with `auto_scale_down=True`, but the current `app.py` disables it. Manual shutdown remains available.
 - NAT Instance instead of NAT Gateway reduces fixed monthly costs.
 - Actual costs depend on usage patterns, Spot market, and region. Use the [AWS Pricing Calculator](https://calculator.aws/) for estimates.
 
