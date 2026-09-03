@@ -57,6 +57,7 @@ COPY comfyui_config/extra_model_paths.yaml ./extra_model_paths.yaml
 
 RUN mkdir -p /home/user/bin
 COPY --chown=user:user scripts/configure_comfyui_manager.py /home/user/bin/configure_comfyui_manager.py
+COPY --chown=user:user scripts/patch_comfyui_manager_version_parser.py /home/user/bin/patch_comfyui_manager_version_parser.py
 COPY --chown=user:user scripts/start_comfyui.sh /home/user/bin/start_comfyui.sh
 RUN chmod +x /home/user/bin/start_comfyui.sh
 

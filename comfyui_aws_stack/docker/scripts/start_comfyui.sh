@@ -3,6 +3,7 @@ set -euo pipefail
 
 COMFYUI_ROOT="/home/user/opt/ComfyUI"
 MANAGER_CONFIG="${COMFYUI_ROOT}/user/__manager/config.ini"
+MANAGER_UTIL="${COMFYUI_ROOT}/custom_nodes/ComfyUI-Manager/glob/manager_util.py"
 PUBLIC_PORT="8181"
 LOOPBACK_PORT="8182"
 
@@ -13,6 +14,7 @@ mkdir -p \
     "${COMFYUI_ROOT}/models/ultralytics/bbox" \
     "${COMFYUI_ROOT}/models/ultralytics/segm"
 
+python /home/user/bin/patch_comfyui_manager_version_parser.py "${MANAGER_UTIL}"
 python /home/user/bin/configure_comfyui_manager.py "${MANAGER_CONFIG}"
 
 socat \
