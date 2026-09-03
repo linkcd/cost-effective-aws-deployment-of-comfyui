@@ -17,7 +17,8 @@ RUN apt-get update && apt-get install -y \
 RUN useradd -m -u 1000 user
 USER user
 ENV HOME=/home/user \
-    PATH=/home/user/.local/bin:$PATH
+    PATH=/home/user/.local/bin:$PATH \
+    VHS_FORCE_FFMPEG_PATH=/usr/bin/ffmpeg
 RUN mkdir -p /home/user/opt/ComfyUI && chown -R user /home/user/opt/ComfyUI
 
 # Pyenv and Python setup

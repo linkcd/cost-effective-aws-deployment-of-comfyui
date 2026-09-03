@@ -369,6 +369,8 @@ The container enables ComfyUI-Manager's `allow_git_url_install` and `allow_pip_i
 
 The image also pre-installs the current official ComfyUI-ReActor Python requirements, GPU-enabled ONNX Runtime, and `importlib-metadata`. ReActor 0.7.0-a2 needs the latter as an installer fallback because current Setuptools releases no longer provide the legacy `pkg_resources` module. ReActor itself remains installable and updatable through ComfyUI-Manager.
 
+VideoHelperSuite is forced to use the image's system `/usr/bin/ffmpeg`. Its bundled `imageio-ffmpeg` binary has software `libx264` and `libx265` encoders but no `h264_nvenc` or `hevc_nvenc`; selecting an NVENC output format therefore failed even though the system ffmpeg provides both encoders. The override is read when ComfyUI starts, so deploying this image requires an ECS task restart.
+
 ComfyUI-Manager versions before [PR #2652](https://github.com/Comfy-Org/ComfyUI-Manager/pull/2652) cannot parse ReActor's valid prerelease version `0.7.0-a2`. ReActor loads and works, but Manager incorrectly continues to show **Install**. At container startup, this deployment applies the same prerelease-parser fix idempotently to the Manager copy on persistent EBS. Once the upstream fix is present, the startup patch detects it and does nothing.
 
 > [!WARNING]
