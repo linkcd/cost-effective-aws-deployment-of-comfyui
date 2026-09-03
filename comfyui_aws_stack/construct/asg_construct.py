@@ -33,7 +33,9 @@ class AsgConstruct(Construct):
             ecs_cluster_name: str,
             schedule_scale_down: str,
             schedule_scale_up: str,
-            instance_type: str, 
+            instance_type: str,
+            enable_nvme_model_cache: bool = True,
+            subnet_id: str = None,
             desired_capacity: int = 1,
             min_capacity: int = 0,
             max_capacity: int = 1,        
@@ -94,12 +96,82 @@ class AsgConstruct(Construct):
         ))        
 
         user_data_script = ec2.UserData.for_linux()
-        user_data_script.add_commands(f"""#!/bin/bash
-        echo ECS_CLUSTER={ecs_cluster_name} >> /etc/ecs/ecs.config
-        REGION=$(curl -s http://169.254.169.254/latest/meta-data/placement/region)
-        docker plugin install public.ecr.aws/j1l5j1d1/rexray-ebs --grant-all-permissions REXRAY_PREEMPT=true EBS_REGION=$REGION
-        systemctl restart docker
-        """)
+        user_data_script.add_commands(
+            "set -euxo pipefail",
+            "systemctl stop ecs || true",
+            f"echo ECS_CLUSTER={ecs_cluster_name} >> /etc/ecs/ecs.config",
+        )
+
+        if enable_nvme_model_cache:
+            user_data_script.add_commands(
+                'CACHE_MOUNT="/mnt/comfy-cache"',
+                'mkdir -p "$CACHE_MOUNT"',
+                (
+                    "INSTANCE_STORE_DEVICE=$(lsblk -dn -o NAME,MODEL "
+                    "| awk '$0 ~ /Amazon EC2 NVMe Instance Storage/ "
+                    "{print \"/dev/\" $1; exit}' || true)"
+                ),
+                'if [ -n "$INSTANCE_STORE_DEVICE" ]; then',
+                '  echo "Preparing ComfyUI cache on $INSTANCE_STORE_DEVICE"',
+                '  if ! blkid "$INSTANCE_STORE_DEVICE" >/dev/null 2>&1; then',
+                '    mkfs.ext4 -F -m 0 -L COMFY_CACHE "$INSTANCE_STORE_DEVICE"',
+                "  fi",
+                (
+                    '  CACHE_UUID=$(blkid -s UUID -o value '
+                    '"$INSTANCE_STORE_DEVICE" || true)'
+                ),
+                '  if [ -n "$CACHE_UUID" ]; then',
+                (
+                    '    grep -q "UUID=$CACHE_UUID " /etc/fstab '
+                    '|| echo "UUID=$CACHE_UUID $CACHE_MOUNT ext4 '
+                    'defaults,nofail,noatime 0 2" >> /etc/fstab'
+                ),
+                '    if mountpoint -q "$CACHE_MOUNT" || mount "$CACHE_MOUNT"; then',
+                '      chown 1000:1000 "$CACHE_MOUNT"',
+                '      chmod 0775 "$CACHE_MOUNT"',
+                '      touch "$CACHE_MOUNT/.comfyui-instance-store"',
+                (
+                    '      chown 1000:1000 '
+                    '"$CACHE_MOUNT/.comfyui-instance-store"'
+                ),
+                "    else",
+                (
+                    '      echo "WARNING: unable to mount instance-store cache; '
+                    'ComfyUI will use EBS" >&2'
+                ),
+                "    fi",
+                "  fi",
+                "else",
+                (
+                    '  echo "WARNING: no EC2 instance-store NVMe device found; '
+                    'ComfyUI will use EBS" >&2'
+                ),
+                "fi",
+            )
+
+        user_data_script.add_commands(
+            (
+                "TOKEN=$(curl -sS -X PUT "
+                '-H "X-aws-ec2-metadata-token-ttl-seconds: 21600" '
+                "http://169.254.169.254/latest/api/token)"
+            ),
+            (
+                "REGION=$(curl -sS "
+                '-H "X-aws-ec2-metadata-token: $TOKEN" '
+                "http://169.254.169.254/latest/meta-data/placement/region)"
+            ),
+            (
+                "if ! docker plugin inspect "
+                "public.ecr.aws/j1l5j1d1/rexray-ebs >/dev/null 2>&1; then "
+                "docker plugin install "
+                "public.ecr.aws/j1l5j1d1/rexray-ebs "
+                "--grant-all-permissions "
+                "REXRAY_PREEMPT=true EBS_REGION=$REGION; "
+                "fi"
+            ),
+            "systemctl restart docker",
+            "systemctl enable --now ecs",
+        )
 
         # Create an Auto Scaling Group
         launchTemplate = ec2.LaunchTemplate(
@@ -120,14 +192,28 @@ class AsgConstruct(Construct):
             ],
         )
 
+        asg_subnet_selection = ec2.SubnetSelection(
+            # Fresh stacks can search private AZs for GPU capacity.
+            subnet_type=ec2.SubnetType.PRIVATE_WITH_EGRESS,
+        )
+        if subnet_id:
+            # An existing REX-Ray EBS volume is AZ-bound. Pinning the host to
+            # its current subnet guarantees that a replacement can reattach it.
+            asg_subnet_selection = ec2.SubnetSelection(
+                subnets=[
+                    ec2.Subnet.from_subnet_id(
+                        self,
+                        f"{construct_id}ExistingEbsSubnet",
+                        subnet_id,
+                    )
+                ]
+            )
+
         auto_scaling_group = autoscaling.AutoScalingGroup(
             self,
             auto_scaling_group_id,
             vpc=vpc,
-            vpc_subnets=ec2.SubnetSelection(
-                # Let Auto Scaling choose any private AZ with capacity.
-                subnet_type=ec2.SubnetType.PRIVATE_WITH_EGRESS,
-            ),
+            vpc_subnets=asg_subnet_selection,
             # Use Mixed Instance Policy to increase availability in case capacity is not available.
             mixed_instances_policy=autoscaling.MixedInstancesPolicy(
                 instances_distribution=autoscaling.InstancesDistribution(
@@ -149,6 +235,12 @@ class AsgConstruct(Construct):
             max_capacity=max_capacity,
             desired_capacity=desired_capacity,
             new_instances_protected_from_scale_in=False,
+            update_policy=autoscaling.UpdatePolicy.rolling_update(
+                max_batch_size=1,
+                min_instances_in_service=0,
+                pause_time=Duration.minutes(20),
+                wait_on_resource_signals=False,
+            ),
         )
 
         auto_scaling_group.apply_removal_policy(RemovalPolicy.DESTROY)

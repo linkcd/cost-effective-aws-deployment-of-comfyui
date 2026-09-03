@@ -418,6 +418,19 @@
         }),
         'Type': 'AWS::AutoScaling::AutoScalingGroup',
         'UpdatePolicy': dict({
+          'AutoScalingRollingUpdate': dict({
+            'MaxBatchSize': 1,
+            'MinInstancesInService': 0,
+            'PauseTime': 'PT20M',
+            'SuspendProcesses': list([
+              'HealthCheck',
+              'ReplaceUnhealthy',
+              'AZRebalance',
+              'AlarmNotification',
+              'ScheduledActions',
+              'InstanceRefresh',
+            ]),
+          }),
           'AutoScalingScheduledAction': dict({
             'IgnoreUnmodifiedGroupSizeProperties': True,
           }),
@@ -1054,18 +1067,43 @@
                   list([
                     '''
                       #!/bin/bash
-                      #!/bin/bash
-                              echo ECS_CLUSTER=
+                      set -euxo pipefail
+                      systemctl stop ecs || true
+                      echo ECS_CLUSTER=
                     ''',
                     dict({
                       'Ref': 'EcsCluster97242B84',
                     }),
                     '''
                        >> /etc/ecs/ecs.config
-                              REGION=$(curl -s http://169.254.169.254/latest/meta-data/placement/region)
-                              docker plugin install public.ecr.aws/j1l5j1d1/rexray-ebs --grant-all-permissions REXRAY_PREEMPT=true EBS_REGION=$REGION
-                              systemctl restart docker
-                              
+                      CACHE_MOUNT="/mnt/comfy-cache"
+                      mkdir -p "$CACHE_MOUNT"
+                      INSTANCE_STORE_DEVICE=$(lsblk -dn -o NAME,MODEL | awk '$0 ~ /Amazon EC2 NVMe Instance Storage/ {print "/dev/" $1; exit}' || true)
+                      if [ -n "$INSTANCE_STORE_DEVICE" ]; then
+                        echo "Preparing ComfyUI cache on $INSTANCE_STORE_DEVICE"
+                        if ! blkid "$INSTANCE_STORE_DEVICE" >/dev/null 2>&1; then
+                          mkfs.ext4 -F -m 0 -L COMFY_CACHE "$INSTANCE_STORE_DEVICE"
+                        fi
+                        CACHE_UUID=$(blkid -s UUID -o value "$INSTANCE_STORE_DEVICE" || true)
+                        if [ -n "$CACHE_UUID" ]; then
+                          grep -q "UUID=$CACHE_UUID " /etc/fstab || echo "UUID=$CACHE_UUID $CACHE_MOUNT ext4 defaults,nofail,noatime 0 2" >> /etc/fstab
+                          if mountpoint -q "$CACHE_MOUNT" || mount "$CACHE_MOUNT"; then
+                            chown 1000:1000 "$CACHE_MOUNT"
+                            chmod 0775 "$CACHE_MOUNT"
+                            touch "$CACHE_MOUNT/.comfyui-instance-store"
+                            chown 1000:1000 "$CACHE_MOUNT/.comfyui-instance-store"
+                          else
+                            echo "WARNING: unable to mount instance-store cache; ComfyUI will use EBS" >&2
+                          fi
+                        fi
+                      else
+                        echo "WARNING: no EC2 instance-store NVMe device found; ComfyUI will use EBS" >&2
+                      fi
+                      TOKEN=$(curl -sS -X PUT -H "X-aws-ec2-metadata-token-ttl-seconds: 21600" http://169.254.169.254/latest/api/token)
+                      REGION=$(curl -sS -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/placement/region)
+                      if ! docker plugin inspect public.ecr.aws/j1l5j1d1/rexray-ebs >/dev/null 2>&1; then docker plugin install public.ecr.aws/j1l5j1d1/rexray-ebs --grant-all-permissions REXRAY_PREEMPT=true EBS_REGION=$REGION; fi
+                      systemctl restart docker
+                      systemctl enable --now ecs
                       echo ECS_CLUSTER=
                     ''',
                     dict({
@@ -2955,6 +2993,14 @@
                     'Ref': 'EcsConstructEcsConstructComfyUIBucketAE7FB2B1',
                   }),
                 }),
+                dict({
+                  'Name': 'COMFYUI_MODEL_CACHE_ENABLED',
+                  'Value': '1',
+                }),
+                dict({
+                  'Name': 'COMFYUI_MODEL_CACHE_ROOT',
+                  'Value': '/mnt/comfy-cache',
+                }),
               ]),
               'Essential': True,
               'HealthCheck': dict({
@@ -2964,7 +3010,7 @@
                 ]),
                 'Interval': 15,
                 'Retries': 8,
-                'StartPeriod': 30,
+                'StartPeriod': 900,
                 'Timeout': 10,
               }),
               'Image': dict({
@@ -2975,7 +3021,7 @@
                     dict({
                       'Ref': 'AWS::URLSuffix',
                     }),
-                    '/cdk-hnb659fds-container-assets-123456789012-us-east-1:2b4a9f0401838816ccb8a9b4695a20200328637588aed3ecf8187d768d7ae475',
+                    '/cdk-hnb659fds-container-assets-123456789012-us-east-1:7daf730e742cf25b137b6d732ba741639174744edda3b7ca21a8f23c7cf08166',
                   ]),
                 ]),
               }),
@@ -2995,6 +3041,11 @@
                   'ContainerPath': '/home/user/opt/ComfyUI',
                   'ReadOnly': False,
                   'SourceVolume': 'ComfyUIVolume-ba84ef1e44-20260726000318',
+                }),
+                dict({
+                  'ContainerPath': '/mnt/comfy-cache',
+                  'ReadOnly': False,
+                  'SourceVolume': 'ComfyUIModelCache',
                 }),
               ]),
               'Name': 'ComfyUIContainer',
@@ -3058,6 +3109,12 @@
                 'Scope': 'shared',
               }),
               'Name': 'ComfyUIVolume-ba84ef1e44-20260726000318',
+            }),
+            dict({
+              'Host': dict({
+                'SourcePath': '/mnt/comfy-cache',
+              }),
+              'Name': 'ComfyUIModelCache',
             }),
           ]),
         }),
@@ -3182,7 +3239,7 @@
             'MinimumHealthyPercent': 0,
           }),
           'EnableECSManagedTags': False,
-          'HealthCheckGracePeriodSeconds': 30,
+          'HealthCheckGracePeriodSeconds': 900,
           'LoadBalancers': list([
             dict({
               'ContainerName': 'ComfyUIContainer',

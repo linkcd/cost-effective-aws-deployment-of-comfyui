@@ -19,6 +19,9 @@ comfy_ui_stack = ComfyUIStack(
     },
     use_spot=False,
     auto_scale_down=False,
+    enable_nvme_model_cache=True,
+    comfyui_ebs_volume_name="ComfyUIVolume-8a39c00b32-20260901154923",
+    comfyui_subnet_id="subnet-0f26675ddc32e0174",
     self_sign_up_enabled=True,
 )
 

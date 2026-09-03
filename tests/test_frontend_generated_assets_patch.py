@@ -44,9 +44,13 @@ OLD_FUNCTION = (
 )
 
 
-def write_bundle(assets_dir: Path, function_source: str = OLD_FUNCTION) -> Path:
-    assets_dir.mkdir(parents=True)
-    bundle = assets_dir / "settingStore-fixture.js"
+def write_bundle(
+    assets_dir: Path,
+    function_source: str = OLD_FUNCTION,
+    filename: str = "settingStore-fixture.js",
+) -> Path:
+    assets_dir.mkdir(parents=True, exist_ok=True)
+    bundle = assets_dir / filename
     bundle.write_text(
         f"const unrelated=t.historyAssets;{function_source}"
         "const trailing=t.historyAssets;",
@@ -112,15 +116,29 @@ def test_frontend_patch_rejects_an_unknown_layout(tmp_path):
     assert bundle.read_text(encoding="utf-8") == original_source
 
 
-def test_frontend_patch_requires_one_bundle(tmp_path):
+def test_frontend_patch_ignores_setting_store_shim_bundle(tmp_path):
     assets_dir = tmp_path / "assets"
-    write_bundle(assets_dir)
-    (assets_dir / "settingStore-second.js").write_text(
-        OLD_FUNCTION,
+    bundle = write_bundle(assets_dir)
+    (assets_dir / "settingStore-shim.js").write_text(
+        'export*from"./settingStore-fixture.js";',
         encoding="utf-8",
     )
 
-    with pytest.raises(RuntimeError, match="found 2"):
+    result = PATCH_MODULE.patch_frontend_generated_assets(assets_dir)
+
+    assert result == "settingStore-fixture.js: patched"
+    assert ".flatOutputAssets" in bundle.read_text(encoding="utf-8")
+
+
+def test_frontend_patch_rejects_multiple_function_bundles(tmp_path):
+    assets_dir = tmp_path / "assets"
+    write_bundle(assets_dir)
+    write_bundle(
+        assets_dir,
+        filename="settingStore-second.js",
+    )
+
+    with pytest.raises(RuntimeError, match="found 2 among 2"):
         PATCH_MODULE.patch_frontend_generated_assets(assets_dir)
 
 

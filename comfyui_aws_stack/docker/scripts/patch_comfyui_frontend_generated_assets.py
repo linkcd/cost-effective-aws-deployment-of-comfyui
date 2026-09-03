@@ -118,13 +118,20 @@ def find_assets_api_span(source: str) -> tuple[int, int]:
 def patch_frontend_generated_assets(assets_dir: Path) -> str:
     """Patch the installed frontend bundle and return the operation result."""
     bundles = sorted(assets_dir.glob("settingStore-*.js"))
-    if len(bundles) != 1:
+    matching_bundles: list[tuple[Path, str]] = []
+    for bundle_path in bundles:
+        source = bundle_path.read_text(encoding="utf-8")
+        if FUNCTION_MARKER in source:
+            matching_bundles.append((bundle_path, source))
+
+    if len(matching_bundles) != 1:
         raise RuntimeError(
-            f"expected exactly one settingStore-*.js bundle, found {len(bundles)}"
+            "expected exactly one settingStore-*.js bundle containing "
+            f"{FUNCTION_MARKER!r}, found {len(matching_bundles)} "
+            f"among {len(bundles)} bundles"
         )
 
-    bundle_path = bundles[0]
-    source = bundle_path.read_text(encoding="utf-8")
+    bundle_path, source = matching_bundles[0]
     function_start, function_end = find_assets_api_span(source)
     function_source = source[function_start:function_end]
 

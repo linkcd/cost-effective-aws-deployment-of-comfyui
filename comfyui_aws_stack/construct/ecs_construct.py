@@ -39,6 +39,8 @@ class EcsConstruct(Construct):
         user_pool: cognito.UserPool,
         user_pool_client: cognito.UserPoolClient,
         cluster: ecs.Cluster,
+        enable_nvme_model_cache: bool = True,
+        comfyui_ebs_volume_name: str = None,
         slack_workspace_id: str = None,
         slack_channel_id: str = None,
         **kwargs,
@@ -110,11 +112,19 @@ class EcsConstruct(Construct):
             network_mode=ecr_assets.NetworkMode.custom("sagemaker") if is_sagemaker_studio else None,
         )
 
-        # Use timestamp suffix to ensure a new volume name on redeployment
-        unique_suffix = suffix + "-" + datetime.datetime.utcnow().strftime("%Y%m%d%H%M%S")
+        # Preserve an explicitly selected REX-Ray volume across task revisions.
+        # The timestamp fallback retains the existing fresh-deployment behavior.
+        unique_suffix = (
+            suffix + "-" + datetime.datetime.utcnow().strftime("%Y%m%d%H%M%S")
+        )
+        volume_name = (
+            comfyui_ebs_volume_name
+            if comfyui_ebs_volume_name
+            else "ComfyUIVolume-" + unique_suffix
+        )
         
         comfy_volume = ecs.Volume(
-            name="ComfyUIVolume-" + unique_suffix,
+            name=volume_name,
             docker_volume_configuration=ecs.DockerVolumeConfiguration(
                 scope=ecs.Scope.SHARED,
                 driver="public.ecr.aws/j1l5j1d1/rexray-ebs",
@@ -124,7 +134,16 @@ class EcsConstruct(Construct):
                 },
                 autoprovision=True
             )
-        )        
+        )
+
+        task_volumes = [comfy_volume]
+        cache_volume = None
+        if enable_nvme_model_cache:
+            cache_volume = ecs.Volume(
+                name="ComfyUIModelCache",
+                host=ecs.Host(source_path="/mnt/comfy-cache"),
+            )
+            task_volumes.append(cache_volume)
 
         # === ComfyUI Task Definition ===
         comfy_task_definition = ecs.Ec2TaskDefinition(
@@ -133,7 +152,13 @@ class EcsConstruct(Construct):
             network_mode=ecs.NetworkMode.AWS_VPC,
             task_role=task_exec_role,
             execution_role=task_exec_role,
-            volumes=[comfy_volume],
+            volumes=task_volumes,
+        )
+
+        cache_start_period = (
+            Duration.minutes(15)
+            if enable_nvme_model_cache
+            else Duration.seconds(30)
         )
 
         comfy_container = comfy_task_definition.add_container(
@@ -153,13 +178,17 @@ class EcsConstruct(Construct):
                 interval=Duration.seconds(15),
                 timeout=Duration.seconds(10),
                 retries=8,
-                start_period=Duration.seconds(30),
+                start_period=cache_start_period,
             ),
             environment={
                 "AWS_REGION": region,
                 "COGNITO_USER_POOL_ID": user_pool.user_pool_id,
                 "COGNITO_CLIENT_ID": user_pool_client.user_pool_client_id,
                 "COMFYUI_S3_BUCKET": comfyui_bucket.bucket_name,
+                "COMFYUI_MODEL_CACHE_ENABLED": (
+                    "1" if enable_nvme_model_cache else "0"
+                ),
+                "COMFYUI_MODEL_CACHE_ROOT": "/mnt/comfy-cache",
             },
         )
 
@@ -170,6 +199,15 @@ class EcsConstruct(Construct):
                 read_only=False,
             )
         )
+
+        if cache_volume is not None:
+            comfy_container.add_mount_points(
+                ecs.MountPoint(
+                    container_path="/mnt/comfy-cache",
+                    source_volume=cache_volume.name,
+                    read_only=False,
+                )
+            )
 
         # comfy_container.add_port_mappings(
         #     ecs.PortMapping(container_port=8181, host_port=8181, protocol=ecs.Protocol.TCP)
@@ -223,7 +261,7 @@ class EcsConstruct(Construct):
             ],
             placement_constraints=[ecs.PlacementConstraint.distinct_instances()],
             security_groups=[comfy_sg],
-            health_check_grace_period=Duration.seconds(30),
+            health_check_grace_period=cache_start_period,
             min_healthy_percent=0,
             cloud_map_options=ecs.CloudMapOptions(
                 name="comfy",

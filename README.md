@@ -266,6 +266,35 @@ This stack's ECS task reserves exactly one GPU, so selecting an eight-GPU EC2 in
 
 Instance availability and service quotas vary by Region and Availability Zone. See the official [Amazon EC2 G6e](https://aws.amazon.com/ec2/instance-types/g6e/) and [Amazon EC2 P5](https://aws.amazon.com/ec2/instance-types/p5/) specifications before deployment.
 
+#### MiniMax H3 runtime and local model cache
+
+The H3 image pins the tested `int8_convrot` runtime instead of following
+unbounded latest packages:
+
+- NVIDIA CUDA `13.0.3`
+- PyTorch `2.14.0+cu130`
+- TorchVision `0.29.0+cu130`
+- TorchAudio `2.11.0+cu130`
+- Comfy Kitchen `0.2.31`
+- ComfyUI commit `3216c62e9962c3babd28a4dfea6e5aef50b8fe16`
+
+`enable_nvme_model_cache=True` mounts EC2 instance-store storage at
+`/mnt/comfy-cache`. Container startup keeps the canonical H3 files on the
+persistent EBS volume and copies the manifest-selected files to NVMe. ComfyUI
+searches the NVMe copy first and the EBS copy second.
+
+Normal model downloads continue to use
+`/home/user/opt/ComfyUI/models` on EBS. A downloaded file enters the NVMe cache
+only when its relative filename is listed in
+`comfyui_aws_stack/docker/comfyui_config/h3_model_cache_manifest.json`, and the
+cache refresh occurs on the next task start. Other models remain on EBS and are
+not cached.
+
+Instance-store data is disposable. After EC2 replacement, host bootstrap
+formats and mounts the fresh NVMe device and container startup rebuilds the
+cache from EBS. If NVMe is unavailable or refresh fails, ComfyUI continues from
+the EBS fallback.
+
 #### Observed `g6e.2xlarge` out-of-memory failure
 
 During the Tokyo deployment investigation, the old ECS task stopped with exit code `137` and:
@@ -399,10 +428,11 @@ The VPC does not explicitly cap the NAT count. By CDK default, it can create one
 | VPC and subnets | Creates public and private-with-egress subnets across up to three Availability Zones. The ALB and NAT are public; the GPU/ECS host remains private. |
 | `t4g.nano` NAT instance(s) | Low-cost outbound internet path for private subnets when `cheap_vpc=True`. CDK can create one per selected AZ, and they normally remain running even when GPU compute scales to zero. |
 | S3 gateway VPC endpoint | Keeps supported S3 traffic, including ECR image-layer downloads, off the NAT path. |
-| GPU Auto Scaling Group | Launches the ECS-optimized GPU EC2 host. Defaults to one Spot `g6e.2xlarge`, with minimum 0, desired 1, maximum 1, and an encrypted 200 GiB root volume. It can choose any configured private AZ with capacity. |
+| GPU Auto Scaling Group | Launches the ECS-optimized GPU EC2 host. Defaults to one Spot `g6e.2xlarge`, with minimum 0, desired 1, maximum 1, and an encrypted 200 GiB root volume. A fresh deployment can search private AZs; `comfyui_subnet_id` pins an existing EBS-backed deployment to the volume's AZ. |
 | ECS cluster and capacity provider | Registers the GPU host and schedules the EC2-backed ComfyUI task onto it. |
 | ECS task and service | Runs the ComfyUI Docker image, reserves one GPU, exposes port `8181` plus worker ports `8189`–`8191`, reports health, and replaces failed/stopped tasks. |
 | REX-Ray EBS data volume | Creates a 5,000 GiB gp3 Docker volume mounted at `/home/user/opt/ComfyUI`. Models, custom nodes/plugins, workflows, outputs, and settings persist independently of a container restart. It is created at runtime and requires manual cleanup. |
+| EC2 instance-store model cache | When enabled, mounts disposable local NVMe at `/mnt/comfy-cache`, rebuilds selected H3 files from EBS after host replacement, and falls back to EBS if cache preparation fails. |
 | ECR/CDK Docker image asset | Stores the built ComfyUI container image that ECS pulls when starting a task. Files installed only into a container layer are lost on replacement unless added to the image or stored on the mounted EBS path. |
 | S3 data bucket | Retained, encrypted object storage exposed to the task through `COMFYUI_S3_BUCKET`. It is separate from the locally mounted ComfyUI models directory. |
 | Application Load Balancer | Public HTTPS entry point. Redirects HTTP to HTTPS, performs Cognito authentication, forwards ComfyUI traffic to port `8181`, and checks `/system_stats`. |
@@ -560,6 +590,9 @@ All parameters are set in `app.py` when instantiating `ComfyUIStack`. See [Deplo
 | `spot_price` | `"0.752"` | Maximum Spot price (USD/hr). Instance only launches when Spot price is below this value |
 | `comfyui_instance_type` | `"g6e.2xlarge"` | GPU instance type for ComfyUI |
 | `enable_comfyui` | `True` | Enable ComfyUI ECS deployment |
+| `enable_nvme_model_cache` | `True` | Cache manifest-selected H3 models on EC2 instance-store NVMe with EBS fallback |
+| `comfyui_ebs_volume_name` | `None` | Existing REX-Ray volume name to preserve across task and host replacement |
+| `comfyui_subnet_id` | `None` | Private subnet containing the existing AZ-bound EBS volume |
 | `auto_scale_down` | `True` | Scale to zero after 1 hour of idle (CPU < 1%) |
 | `schedule_auto_scaling` | `False` | Enable cron-based scheduled scaling |
 | `timezone` | `"UTC"` | Timezone for scheduled scaling |
@@ -580,7 +613,7 @@ All parameters are set in `app.py` when instantiating `ComfyUIStack`. See [Deplo
 | `slack_workspace_id` | `None` | Slack workspace ID for notifications (enables ASG/ECS alerts) |
 | `slack_channel_id` | `None` | Slack channel ID for notifications |
 
-> **Note:** The defaults above are from `ComfyUIStack`. Your `app.py` may override them. The current `app.py` sets `use_spot=False`, `auto_scale_down=False`, and `self_sign_up_enabled=True`.
+> **Note:** The defaults above are from `ComfyUIStack`. Your `app.py` may override them. The current `app.py` sets `use_spot=False`, `auto_scale_down=False`, `self_sign_up_enabled=True`, and pins the live Tokyo EBS volume and subnet so cache deployment preserves existing data.
 
 ### Well-Architected Considerations
 

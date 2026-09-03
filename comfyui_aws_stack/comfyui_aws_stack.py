@@ -53,6 +53,9 @@ class ComfyUIStack(Stack):
                  hosted_zone_id: str = None,
                  enable_comfyui: bool = True,
                  comfyui_instance_type: str = "g6e.2xlarge",
+                 enable_nvme_model_cache: bool = True,
+                 comfyui_ebs_volume_name: str = None,
+                 comfyui_subnet_id: str = None,
                  # Slack
                  slack_workspace_id: str = None,
                  slack_channel_id: str = None,
@@ -133,6 +136,8 @@ class ComfyUIStack(Stack):
                 schedule_scale_down=schedule_scale_down,
                 schedule_scale_up=schedule_scale_up,
                 instance_type=comfyui_instance_type,
+                enable_nvme_model_cache=enable_nvme_model_cache,
+                subnet_id=comfyui_subnet_id,
                 desired_capacity=1,
                 slack_workspace_id=slack_workspace_id,
                 slack_channel_id=slack_channel_id,
@@ -152,6 +157,8 @@ class ComfyUIStack(Stack):
                 user_pool=auth_construct.user_pool,
                 user_pool_client=auth_construct.user_pool_client,
                 cluster=ecs_cluster,
+                enable_nvme_model_cache=enable_nvme_model_cache,
+                comfyui_ebs_volume_name=comfyui_ebs_volume_name,
                 slack_workspace_id=slack_workspace_id,
                 slack_channel_id=slack_channel_id,
             )
