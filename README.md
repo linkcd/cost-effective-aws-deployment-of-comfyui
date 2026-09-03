@@ -375,7 +375,9 @@ VideoHelperSuite is forced to use the image's system `/usr/bin/ffmpeg`. Its bund
 
 ComfyUI starts with `--enable-assets`, allowing the web UI's **Assets** browser to index generated images, animations, and videos from `/home/user/opt/ComfyUI/output`. That directory and the asset database are stored on the persistent EBS volume.
 
-Deleting job history removes the workflow execution records but does not delete generated files from the output directory. The Assets browser indexes the files separately, so existing outputs can remain visible after history deletion or an ECS task restart. The initial index runs in the background and may take a short time; refresh the Assets browser after it completes.
+Deleting job history removes the workflow execution records but does not delete generated files from the output directory. Current packaged frontend versions nevertheless read job history for the **Generated** tab, so the unmodified UI incorrectly reports **No generated files found** after history is cleared even when the Assets API has indexed the files.
+
+During the image build, this deployment applies a guarded frontend patch that connects the **Generated** tab to ComfyUI's existing persistent flat-output Assets API. The patch is idempotent and verifies the expected frontend structure; a future incompatible frontend causes the image build to fail instead of silently applying an unsafe replacement. With the patch, outputs remain visible after history deletion or an ECS task restart. The initial index runs in the background and may take a short time, so refresh the Assets browser after it completes.
 
 ComfyUI-Manager versions before [PR #2652](https://github.com/Comfy-Org/ComfyUI-Manager/pull/2652) cannot parse ReActor's valid prerelease version `0.7.0-a2`. ReActor loads and works, but Manager incorrectly continues to show **Install**. At container startup, this deployment applies the same prerelease-parser fix idempotently to the Manager copy on persistent EBS. Once the upstream fix is present, the startup patch detects it and does nothing.
 

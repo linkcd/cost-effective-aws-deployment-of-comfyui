@@ -2975,7 +2975,7 @@
                     dict({
                       'Ref': 'AWS::URLSuffix',
                     }),
-                    '/cdk-hnb659fds-container-assets-123456789012-us-east-1:46ed710ca2c3ef1bafabbbe0661ea1706a42f3d4257f90c6a9c39f634e68ee1e',
+                    '/cdk-hnb659fds-container-assets-123456789012-us-east-1:2b4a9f0401838816ccb8a9b4695a20200328637588aed3ecf8187d768d7ae475',
                   ]),
                 ]),
               }),
