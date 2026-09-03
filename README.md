@@ -303,7 +303,7 @@ diffusion_models, unet, unet_gguf, model_gguf
 
 The downloader wrapped the complete alias lookup in one error handler. If an optional alias such as `unet_gguf` or `model_gguf` was not registered by ComfyUI, that lookup failed and discarded the valid `diffusion_models` path found earlier. Categories such as `loras` and `sams` did not hit the same missing-alias path, which explains why their downloads succeeded.
 
-#### Workaround applied to the deployed volume
+#### Workaround applied to the deployment and source
 
 The following directories were created on the persistent ComfyUI EBS volume:
 
@@ -320,13 +320,15 @@ These mappings were added under the existing ComfyUI base-path entry in `/home/u
     model_gguf: models/model_gguf/
 ```
 
+The same mappings are declared in `comfyui_aws_stack/docker/comfyui_config/extra_model_paths.yaml`, and the container startup script creates the corresponding directories. Future image builds therefore retain the workaround when provisioning a new volume.
+
 After restarting the ECS task, all three categories resolved successfully. A backup was saved as:
 
 ```text
 /home/user/opt/ComfyUI/extra_model_paths.yaml.bak-before-model-resolver-alias-workaround
 ```
 
-The whole `/home/user/opt/ComfyUI` path is EBS-backed, so this workaround and installed custom nodes survive normal container/task replacement while the same volume is reused. Reapply or restore it if a redeployment provisions a new data volume.
+The whole `/home/user/opt/ComfyUI` path is EBS-backed, so the live workaround and installed custom nodes survive normal container/task replacement while the same volume is reused.
 
 #### Upstream fix status
 

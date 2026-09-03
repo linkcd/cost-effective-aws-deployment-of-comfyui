@@ -6,6 +6,7 @@ comfyui:
     configs: models/configs/
     controlnet: models/controlnet/
     diffusers: models/diffusers/
+    diffusion_models: models/diffusion_models/
     embeddings: models/embeddings/
     gligen: models/gligen/
     hypernetworks: models/hypernetworks/
@@ -16,6 +17,8 @@ comfyui:
     style_models: models/style_models/
     ultralytics: models/ultralytics/
     unet: models/unet/
+    unet_gguf: models/unet_gguf/
+    model_gguf: models/model_gguf/
     upscale_models: models/upscale_models/
     vae: models/vae/
     vae_approx: models/vae_approx/
