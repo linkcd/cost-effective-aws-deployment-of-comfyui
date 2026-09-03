@@ -25,6 +25,7 @@ proxy_pid=$!
 python "${COMFYUI_ROOT}/main.py" \
     --listen 127.0.0.1 \
     --port "${LOOPBACK_PORT}" \
+    --enable-assets \
     --output-directory "${COMFYUI_ROOT}/output/" \
     "$@" &
 comfyui_pid=$!

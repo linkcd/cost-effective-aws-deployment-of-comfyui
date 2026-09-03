@@ -371,6 +371,12 @@ The image also pre-installs the current official ComfyUI-ReActor Python requirem
 
 VideoHelperSuite is forced to use the image's system `/usr/bin/ffmpeg`. Its bundled `imageio-ffmpeg` binary has software `libx264` and `libx265` encoders but no `h264_nvenc` or `hevc_nvenc`; selecting an NVENC output format therefore failed even though the system ffmpeg provides both encoders. The override is read when ComfyUI starts, so deploying this image requires an ECS task restart.
 
+### Generated Files in the Assets Browser
+
+ComfyUI starts with `--enable-assets`, allowing the web UI's **Assets** browser to index generated images, animations, and videos from `/home/user/opt/ComfyUI/output`. That directory and the asset database are stored on the persistent EBS volume.
+
+Deleting job history removes the workflow execution records but does not delete generated files from the output directory. The Assets browser indexes the files separately, so existing outputs can remain visible after history deletion or an ECS task restart. The initial index runs in the background and may take a short time; refresh the Assets browser after it completes.
+
 ComfyUI-Manager versions before [PR #2652](https://github.com/Comfy-Org/ComfyUI-Manager/pull/2652) cannot parse ReActor's valid prerelease version `0.7.0-a2`. ReActor loads and works, but Manager incorrectly continues to show **Install**. At container startup, this deployment applies the same prerelease-parser fix idempotently to the Manager copy on persistent EBS. Once the upstream fix is present, the startup patch detects it and does nothing.
 
 > [!WARNING]
