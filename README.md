@@ -334,6 +334,35 @@ The whole `/home/user/opt/ComfyUI` path is EBS-backed, so the live workaround an
 
 The upstream fix is commit [`026ba97c5b1528a79686e77832877bfc7caff0fc`](https://github.com/Azornes/Comfyui-Model-Resolver/commit/026ba97c5b1528a79686e77832877bfc7caff0fc), “Fix model download directory alias resolution.” It was committed immediately after the [`v1.2.0` release tag](https://github.com/Azornes/Comfyui-Model-Resolver/releases/tag/v1.2.0), so installing the official `v1.2.0` tag alone does **not** include the fix. The long-term solution is to install that commit or a later release that contains it; the alias mappings above are the current workaround.
 
+### Cognito Login 403 on the First Page Load
+
+Last verified: September 2, 2026.
+
+After a successful Cognito login in a new browser session or private window, the first request to ComfyUI can display:
+
+```text
+403 Access denied
+```
+
+This is not a Cognito user-permission, WAF, or IP-allowlist failure in the investigated deployment. The ALB completes authentication successfully, but Cognito redirects the browser from its hosted domain to the ALB. That first ComfyUI document request has `Sec-Fetch-Site: cross-site`, and ComfyUI's origin-protection middleware rejects cross-site requests with HTTP 403. An existing browser session normally works because its navigation is already same-origin.
+
+#### Current no-code workaround
+
+Refresh the page once after the 403 appears. The reload is a same-origin request, so the authenticated ComfyUI page should load. No container restart or repeated login is required.
+
+#### Recommended long-term solution
+
+Use HTTPS custom domains under the same registrable domain for both endpoints, for example:
+
+```text
+comfy.example.com  # ALB / ComfyUI
+auth.example.com   # Cognito hosted UI
+```
+
+This keeps the Cognito redirect same-site while preserving ComfyUI's cross-site request protection. The stack already supports the application domain through `host_name`, `domain_name`, and `hosted_zone_id`; adding a Cognito custom domain requires additional Cognito certificate and DNS configuration.
+
+If matching custom domains are not practical, another option is an authenticated landing endpoint that completes the redirect and then starts a same-origin browser navigation to ComfyUI. Do not solve this by globally disabling ComfyUI's origin checks or enabling unrestricted CORS, because that weakens protection for API and state-changing requests.
+
 ### Installing Custom Nodes and Python Packages from the UI
 
 The container enables ComfyUI-Manager's `allow_git_url_install` and `allow_pip_install` settings at startup. ComfyUI listens on `127.0.0.1:8182`, as required by Manager, while `socat` exposes port `8181` to the authenticated ALB and ECS health checks.
