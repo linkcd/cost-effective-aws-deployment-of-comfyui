@@ -334,6 +334,13 @@ The whole `/home/user/opt/ComfyUI` path is EBS-backed, so the live workaround an
 
 The upstream fix is commit [`026ba97c5b1528a79686e77832877bfc7caff0fc`](https://github.com/Azornes/Comfyui-Model-Resolver/commit/026ba97c5b1528a79686e77832877bfc7caff0fc), “Fix model download directory alias resolution.” It was committed immediately after the [`v1.2.0` release tag](https://github.com/Azornes/Comfyui-Model-Resolver/releases/tag/v1.2.0), so installing the official `v1.2.0` tag alone does **not** include the fix. The long-term solution is to install that commit or a later release that contains it; the alias mappings above are the current workaround.
 
+### Installing Custom Nodes and Python Packages from the UI
+
+The container enables ComfyUI-Manager's `allow_git_url_install` and `allow_pip_install` settings at startup. ComfyUI listens on `127.0.0.1:8182`, as required by Manager, while `socat` exposes port `8181` to the authenticated ALB and ECS health checks.
+
+> [!WARNING]
+> These Manager features allow authenticated users to install and execute arbitrary code inside the ComfyUI task. Installed code can access the persistent EBS volume and the ECS task role's AWS permissions. Restrict Cognito access to trusted administrators; this configuration is not appropriate for public or untrusted self-sign-up.
+
 ### Provisioned AWS Resources and Their Roles
 
 The EC2 instance types have different jobs:

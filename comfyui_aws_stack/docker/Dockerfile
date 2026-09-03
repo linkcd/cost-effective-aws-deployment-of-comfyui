@@ -9,7 +9,7 @@ RUN apt-get update && apt-get install -y \
     make build-essential libssl-dev zlib1g-dev \
     libbz2-dev libreadline-dev libsqlite3-dev wget curl llvm \
     libncursesw5-dev xz-utils tk-dev libxml2-dev libxmlsec1-dev libffi-dev liblzma-dev git git-lfs  \
-    ffmpeg libsm6 libxext6 cmake libgl1-mesa-glx \
+    ffmpeg libsm6 libxext6 cmake libgl1-mesa-glx socat \
     && rm -rf /var/lib/apt/lists/* \
     && git lfs install
 
@@ -45,6 +45,7 @@ RUN pip install --no-cache-dir -r requirements.txt && \
 COPY comfyui_config/extra_model_paths.yaml ./extra_model_paths.yaml
 
 RUN mkdir -p /home/user/bin
+COPY --chown=user:user scripts/configure_comfyui_manager.py /home/user/bin/configure_comfyui_manager.py
 COPY --chown=user:user scripts/start_comfyui.sh /home/user/bin/start_comfyui.sh
 RUN chmod +x /home/user/bin/start_comfyui.sh
 
