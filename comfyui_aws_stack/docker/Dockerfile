@@ -41,6 +41,17 @@ RUN git clone --depth 1 https://github.com/Comfy-Org/ComfyUI . && \
 RUN pip install --no-cache-dir -r requirements.txt && \
     pip install --no-cache-dir -r custom_nodes/ComfyUI-Manager/requirements.txt
 
+# Pre-install the dependencies required by the current ComfyUI-ReActor release.
+# The node itself remains installable/updatable through ComfyUI-Manager.
+ARG REACTOR_COMMIT=6ad6b35a4df250d14cb2abf0808c9ffedf59f747
+RUN git init /tmp/ComfyUI-ReActor && \
+    cd /tmp/ComfyUI-ReActor && \
+    git remote add origin https://github.com/Gourieff/ComfyUI-ReActor.git && \
+    git fetch --depth 1 origin "${REACTOR_COMMIT}" && \
+    git checkout --detach FETCH_HEAD && \
+    pip install --no-cache-dir "importlib-metadata" "onnxruntime-gpu>=1.20.1" -r requirements.txt && \
+    rm -rf /tmp/ComfyUI-ReActor
+
 # Copy the configuration file
 COPY comfyui_config/extra_model_paths.yaml ./extra_model_paths.yaml
 

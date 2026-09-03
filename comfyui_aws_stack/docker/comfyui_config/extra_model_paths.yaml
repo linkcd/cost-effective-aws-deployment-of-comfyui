@@ -16,6 +16,8 @@ comfyui:
     sams: models/sams/
     style_models: models/style_models/
     ultralytics: models/ultralytics/
+    ultralytics_bbox: models/ultralytics/bbox/
+    ultralytics_segm: models/ultralytics/segm/
     unet: models/unet/
     unet_gguf: models/unet_gguf/
     model_gguf: models/model_gguf/

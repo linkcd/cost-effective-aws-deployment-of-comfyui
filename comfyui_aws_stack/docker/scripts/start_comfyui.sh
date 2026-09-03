@@ -9,7 +9,9 @@ LOOPBACK_PORT="8182"
 mkdir -p \
     "${COMFYUI_ROOT}/models/diffusion_models" \
     "${COMFYUI_ROOT}/models/unet_gguf" \
-    "${COMFYUI_ROOT}/models/model_gguf"
+    "${COMFYUI_ROOT}/models/model_gguf" \
+    "${COMFYUI_ROOT}/models/ultralytics/bbox" \
+    "${COMFYUI_ROOT}/models/ultralytics/segm"
 
 python /home/user/bin/configure_comfyui_manager.py "${MANAGER_CONFIG}"
 

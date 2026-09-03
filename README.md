@@ -338,6 +338,8 @@ The upstream fix is commit [`026ba97c5b1528a79686e77832877bfc7caff0fc`](https://
 
 The container enables ComfyUI-Manager's `allow_git_url_install` and `allow_pip_install` settings at startup. ComfyUI listens on `127.0.0.1:8182`, as required by Manager, while `socat` exposes port `8181` to the authenticated ALB and ECS health checks.
 
+The image also pre-installs the current official ComfyUI-ReActor Python requirements, GPU-enabled ONNX Runtime, and `importlib-metadata`. ReActor 0.7.0-a2 needs the latter as an installer fallback because current Setuptools releases no longer provide the legacy `pkg_resources` module. ReActor itself remains installable and updatable through ComfyUI-Manager.
+
 > [!WARNING]
 > These Manager features allow authenticated users to install and execute arbitrary code inside the ComfyUI task. Installed code can access the persistent EBS volume and the ECS task role's AWS permissions. Restrict Cognito access to trusted administrators; this configuration is not appropriate for public or untrusted self-sign-up.
 
