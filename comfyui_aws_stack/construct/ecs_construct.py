@@ -40,6 +40,7 @@ class EcsConstruct(Construct):
         user_pool_client: cognito.UserPoolClient,
         cluster: ecs.Cluster,
         enable_nvme_model_cache: bool = True,
+        disable_pinned_memory: bool = False,
         comfyui_ebs_volume_name: str = None,
         slack_workspace_id: str = None,
         slack_channel_id: str = None,
@@ -169,6 +170,11 @@ class EcsConstruct(Construct):
             ),
             gpu_count=1,
             memory_reservation_mib=15000,
+            command=(
+                ["--disable-pinned-memory"]
+                if disable_pinned_memory
+                else None
+            ),
             # ComfyUI runs on the only GPU in the ASG, so the replacement task
             # cannot start until the old container releases it.
             stop_timeout=Duration.seconds(30),

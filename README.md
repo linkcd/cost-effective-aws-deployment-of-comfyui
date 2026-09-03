@@ -307,10 +307,17 @@ This was a host/system-memory OOM, not a confirmed GPU-VRAM OOM:
 
 - The `g6e.2xlarge` host had approximately 63,430 MiB of RAM.
 - The container's `memory_reservation_mib=15000` is a soft scheduling reservation, not a 15 GiB hard limit.
-- Immediately before the failure, logs showed H3 model-resolution/download requests for the H3 VAE, Qwen3-VL text encoder, Turbo LoRA, and diffusion model.
-- The timing does not prove that generation itself caused the OOM, but it confirms that 64 GiB of host RAM did not provide enough headroom for that model-loading path.
+- ComfyUI enabled approximately 47,046 MiB of pinned host memory while also staging the H3 diffusion model, text encoder, and VAEs.
+- ECS confirmed two post-generation container exits with `OutOfMemoryError`.
 
-For this deployment, start with `g6e.4xlarge` for a cost-conscious H3 setup. Use `p5.4xlarge` when faster generation and greater VRAM/RAM headroom justify the price. Keep `g6e.2xlarge` for controlled tests using the smallest optimized model set, and avoid loading unnecessary models at the same time.
+Set `comfyui_disable_pinned_memory=True` to pass
+`--disable-pinned-memory` to ComfyUI. This is enabled in the investigated
+`g6e.2xlarge` deployment to reduce host-memory pressure. It was validated with
+consecutive 20-step and warm 8-step H3 generations; `VmPin` remained zero and
+the original ECS task stayed healthy after output. If a larger workflow still
+exceeds 64 GiB, use `g6e.4xlarge` for 128 GiB of host RAM. When the local NVMe
+cache is active, ComfyUI's `--fast-disk` option is a separate follow-up
+experiment for disk-backed Dynamic VRAM loading.
 
 ### ComfyUI Model Resolver: `diffusion_models` Issue and Workaround
 
@@ -591,6 +598,7 @@ All parameters are set in `app.py` when instantiating `ComfyUIStack`. See [Deplo
 | `comfyui_instance_type` | `"g6e.2xlarge"` | GPU instance type for ComfyUI |
 | `enable_comfyui` | `True` | Enable ComfyUI ECS deployment |
 | `enable_nvme_model_cache` | `True` | Cache manifest-selected H3 models on EC2 instance-store NVMe with EBS fallback |
+| `comfyui_disable_pinned_memory` | `False` | Pass `--disable-pinned-memory` to ComfyUI to reduce host-RAM pressure |
 | `comfyui_ebs_volume_name` | `None` | Existing REX-Ray volume name to preserve across task and host replacement |
 | `comfyui_subnet_id` | `None` | Private subnet containing the existing AZ-bound EBS volume |
 | `auto_scale_down` | `True` | Scale to zero after 1 hour of idle (CPU < 1%) |

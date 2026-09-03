@@ -54,6 +54,7 @@ class ComfyUIStack(Stack):
                  enable_comfyui: bool = True,
                  comfyui_instance_type: str = "g6e.2xlarge",
                  enable_nvme_model_cache: bool = True,
+                 comfyui_disable_pinned_memory: bool = False,
                  comfyui_ebs_volume_name: str = None,
                  comfyui_subnet_id: str = None,
                  # Slack
@@ -158,6 +159,7 @@ class ComfyUIStack(Stack):
                 user_pool_client=auth_construct.user_pool_client,
                 cluster=ecs_cluster,
                 enable_nvme_model_cache=enable_nvme_model_cache,
+                disable_pinned_memory=comfyui_disable_pinned_memory,
                 comfyui_ebs_volume_name=comfyui_ebs_volume_name,
                 slack_workspace_id=slack_workspace_id,
                 slack_channel_id=slack_channel_id,

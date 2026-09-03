@@ -108,6 +108,23 @@ def test_nvme_cache_can_be_disabled_with_ebs_only_task():
     assert "Amazon EC2 NVMe Instance Storage" not in rendered
 
 
+def test_pinned_memory_can_be_disabled_for_low_ram_h3_host():
+    template = create_template(comfyui_disable_pinned_memory=True)
+
+    template.has_resource_properties(
+        "AWS::ECS::TaskDefinition",
+        {
+            "ContainerDefinitions": Match.array_with(
+                [
+                    Match.object_like(
+                        {"Command": ["--disable-pinned-memory"]}
+                    )
+                ]
+            )
+        },
+    )
+
+
 def test_existing_ebs_volume_and_subnet_are_preserved_for_host_replacement():
     template = create_template(
         comfyui_ebs_volume_name="ComfyUIVolume-existing",

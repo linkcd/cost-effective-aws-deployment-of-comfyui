@@ -83,6 +83,36 @@ settings.
 - A missing NVMe device, mount marker, full cache disk, or copy error falls
   back to EBS without preventing ComfyUI startup.
 
+### Cache lifecycle and when it helps
+
+The disk cache is prepared before ComfyUI accepts a generation. It is not
+populated as a side effect of the first job:
+
+1. A new EC2 host formats and mounts its disposable instance-store NVMe at
+   `/mnt/comfy-cache`.
+2. ECS mounts both the persistent EBS volume and that NVMe path into the
+   container.
+3. Container startup compares the manifest-selected files on EBS with the
+   cache. Missing or changed files are copied from EBS to NVMe before ComfyUI
+   starts.
+4. The generated extra-model-path configuration lists NVMe first and the
+   canonical EBS store second.
+5. The first generation therefore loads cached models from NVMe into host
+   memory and GPU VRAM. Later generations reuse RAM/VRAM while the models remain
+   loaded; if Dynamic VRAM unloads a model, its next disk reload uses NVMe.
+
+A completely new host must still read the selected model files from EBS once
+to rebuild its disposable cache. The cache is most useful for multiple jobs on
+the same host, task/container restarts on the same host, model switching, and
+Dynamic VRAM reloads. If every host is created for exactly one job and then
+terminated, caching mostly moves the one-time EBS wait from the first
+generation into container startup and provides limited end-to-end improvement.
+
+An operating-system reboot of the same physical instance normally retains
+instance-store data, but stopping, terminating, or replacing the instance
+loses it. In those cases the next task rebuilds the cache automatically from
+the persistent EBS source.
+
 For the live deployment, the CDK configuration preserves REX-Ray volume
 `ComfyUIVolume-8a39c00b32-20260901154923` and pins the replacement host to
 subnet `subnet-0f26675ddc32e0174` in the EBS volume's Availability Zone. This
@@ -111,6 +141,12 @@ network, ASG, volume, or mount changes.
 | Attempted warm generation | 377.66 seconds, but it ran in a replacement ECS task and was another cold run |
 | EBS reads during second run | 44,523,508,736 bytes; throughput remained near the 125 MiB/s gp3 limit |
 | Post-generation stability | Original task exited 137 with `OutOfMemoryError` and ECS replaced it |
+| True warm generation | 200.25 seconds for a 15-second output; same ECS task and `0 models unloaded` |
+| EBS reads during true warm run | 38,576,128 bytes, over 99.9% less than the replacement-task cold run |
+| OOM mitigation | ECS revision 7 passes `--disable-pinned-memory`; validated with consecutive 20-step and warm 8-step generations |
+| Revision 7 stress generation | 15-second, 20-step non-Turbo output completed in 12:46 |
+| Revision 7 warm Turbo generation | Same task, `0 models unloaded`, completed in 207.88 seconds |
+| Revision 7 host memory | `VmPin: 0 kB`; approximately 55.5 GiB remained available immediately after the warm output |
 
 This proves that the new image and cache-aware startup code work with the
 existing persistent EBS contents. Because this was intentionally an image-only
@@ -120,8 +156,8 @@ is not active yet. The current task reads the managed H3 files from
 only the host bootstrap and ECS mount mapping; it does not require a VPC
 networking change.
 
-The attempted warm benchmark was not actually warm. Immediately after the
-first output completed, the 64 GiB host OOM-killed ComfyUI. The replacement
+The first attempted warm benchmark was not actually warm. Immediately after
+the first output completed, the 64 GiB host OOM-killed ComfyUI. The replacement
 task then reread approximately 44.52 GB from EBS and produced a second cold
 result of 377.66 seconds. During that run, the dominant phases were:
 
@@ -133,8 +169,28 @@ result of 377.66 seconds. During that run, the dominant phases were:
 The deployed ComfyUI revision enabled approximately 47,046 MiB of pinned host
 memory. It supports both `--disable-pinned-memory` and `--fast-disk`; the latter
 prefers disk-backed Dynamic VRAM loading when fast NVMe storage is available.
-The next controlled test should combine the local NVMe cache with a host-memory
-mitigation so that the process survives long enough to measure a true warm run.
+
+A subsequent 15-second generation ran in the same process and completed in
+200.25 seconds. It read only approximately 38.6 MB from EBS and reported
+`0 models unloaded`, proving that in-memory warm reuse worked. Its eight
+denoising steps consumed approximately 176 seconds, making GPU sampling the
+dominant warm-run phase. The task was nevertheless OOM-killed after output,
+confirming that pinned host memory remained a stability issue.
+
+ECS task-definition revision 7 now passes `--disable-pinned-memory`. Startup
+completed successfully without the previous `Enabled pinned memory 47046`
+message. A 15-second, 20-step non-Turbo stress generation then completed in
+12:46. The same process subsequently completed an 8-step warm Turbo generation
+in 207.88 seconds with `0 models unloaded`. Host inspection reported
+`VmPin: 0 kB`, no swap use, and approximately 55.5 GiB still available
+immediately after the second output. The original ECS task remained healthy
+for more than five minutes after output instead of exiting 137.
+
+This validates disabled pinned memory as the primary mitigation for the
+observed host OOM. It does not prove that every larger resolution or duration
+will fit in 64 GiB, so future workloads should still be monitored. The local
+NVMe cache can next be enabled, followed by a controlled `--fast-disk`
+experiment if additional host-memory reduction is needed.
 
 ## Measured baseline
 
@@ -371,6 +427,21 @@ Only consider hardware after Turbo, cu130, and model storage are measured.
 The live account check found `g7e.2xlarge` available in `ap-northeast-1c`. Its 96 GB GPU memory should allow more of the optimized H3 model set and working state to remain resident. AWS's published G7e performance claim is up to 2.3× G6e inference performance, but this is not a MiniMax H3-specific benchmark.
 
 Moving from `g6e.2xlarge` to `g6e.4xlarge` should not be treated as a GPU sampling upgrade because both use one L40S.
+
+Current Linux On-Demand pricing in Tokyo, verified through the AWS Pricing API
+on 2026-09-03:
+
+| Instance | USD/hour | Increase over `g6e.2xlarge` | 730-hour month |
+|---|---:|---:|---:|
+| `g6e.2xlarge` | $3.25168 | Baseline | $2,373.73 |
+| `g6e.4xlarge` | $4.35703 | +$1.10535 / +34.0% | $3,180.63 |
+| `g7e.2xlarge` | $4.87752 | +$1.62584 / +50.0% | $3,560.59 |
+| `g7e.4xlarge` | $5.79852 | +$2.54684 / +78.3% | $4,232.92 |
+
+`g6e.4xlarge` and `g7e.4xlarge` provide 128 GiB host RAM.
+`g7e.2xlarge` retains the same 64 GiB host RAM as `g6e.2xlarge`, although its
+96 GiB GPU can reduce offloading pressure. All four types were offered in
+`ap-northeast-1c` during the check.
 
 ## Expected performance targets
 
