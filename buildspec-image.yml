@@ -1,0 +1,21 @@
+version: 0.2
+
+# Rebuild and push only the ComfyUI image when the CDK infrastructure is
+# unchanged. The caller must provide all three variables below as CodeBuild
+# environment overrides. Pushing an image does not update the ECS task
+# definition or force a service deployment.
+phases:
+  pre_build:
+    commands:
+      - test -n "$CDK_DEFAULT_REGION"
+      - test -n "$IMAGE_REPOSITORY_URI"
+      - test -n "$IMAGE_URI"
+      - aws ecr get-login-password --region "$CDK_DEFAULT_REGION" | docker login --username AWS --password-stdin "$IMAGE_REPOSITORY_URI"
+
+  build:
+    commands:
+      - docker build --pull --progress=plain -t "$IMAGE_URI" comfyui_aws_stack/docker
+
+  post_build:
+    commands:
+      - docker push "$IMAGE_URI"
