@@ -101,7 +101,7 @@
         'Properties': dict({
           'Code': dict({
             'S3Bucket': 'cdk-hnb659fds-assets-123456789012-us-east-1',
-            'S3Key': '2d1d5f493105453e308878a4d8d97e9287535259be1cd883dfc06ca7988c3e9e.zip',
+            'S3Key': '25eaca20d5feab25be1f3c1d4add4c2b04280aed06976811040aa9a98a82ba0d.zip',
           }),
           'Environment': dict({
             'Variables': dict({
@@ -150,6 +150,8 @@
           'CustomVPCPublicSubnet1RouteTableAssociationCB53C136',
           'CustomVPCPublicSubnet2DefaultRoute00A279CB',
           'CustomVPCPublicSubnet2RouteTableAssociation7DDF1FE5',
+          'CustomVPCPublicSubnet3DefaultRouteF01B894C',
+          'CustomVPCPublicSubnet3RouteTableAssociation75ABAE48',
         ]),
         'Metadata': dict({
           'cdk_nag': dict({
@@ -187,6 +189,9 @@
             }),
             dict({
               'Ref': 'CustomVPCPublicSubnet2Subnet9CA8FBEB',
+            }),
+            dict({
+              'Ref': 'CustomVPCPublicSubnet3Subnet4C2CA60C',
             }),
           ]),
           'Type': 'application',
@@ -405,6 +410,9 @@
             }),
             dict({
               'Ref': 'CustomVPCPrivateSubnet2SubnetA2CC0D16',
+            }),
+            dict({
+              'Ref': 'CustomVPCPrivateSubnet3Subnet078A2C2C',
             }),
           ]),
         }),
@@ -1654,7 +1662,7 @@
         }),
         'Properties': dict({
           'AvailabilityZone': 'dummy1a',
-          'CidrBlock': '10.0.2.0/24',
+          'CidrBlock': '10.0.3.0/24',
           'MapPublicIpOnLaunch': False,
           'Tags': list([
             dict({
@@ -1772,7 +1780,7 @@
         }),
         'Properties': dict({
           'AvailabilityZone': 'dummy1b',
-          'CidrBlock': '10.0.3.0/24',
+          'CidrBlock': '10.0.4.0/24',
           'MapPublicIpOnLaunch': False,
           'Tags': list([
             dict({
@@ -1786,6 +1794,124 @@
             dict({
               'Key': 'Name',
               'Value': 'ComfyUIStack/CustomVPC/PrivateSubnet2',
+            }),
+          ]),
+          'VpcId': dict({
+            'Ref': 'CustomVPC616E3387',
+          }),
+        }),
+        'Type': 'AWS::EC2::Subnet',
+      }),
+      'CustomVPCPrivateSubnet3DefaultRouteB64B43B2': dict({
+        'Metadata': dict({
+          'cdk_nag': dict({
+            'rules_to_suppress': list([
+              dict({
+                'id': 'AwsSolutions-EC28',
+                'reason': 'NAT Instance does not require autoscaling.',
+              }),
+              dict({
+                'id': 'AwsSolutions-EC29',
+                'reason': 'NAT Instance does not require autoscaling.',
+              }),
+            ]),
+          }),
+        }),
+        'Properties': dict({
+          'DestinationCidrBlock': '0.0.0.0/0',
+          'InstanceId': dict({
+            'Ref': 'CustomVPCPublicSubnet3NatInstance17FBB0C0',
+          }),
+          'RouteTableId': dict({
+            'Ref': 'CustomVPCPrivateSubnet3RouteTable35BB3935',
+          }),
+        }),
+        'Type': 'AWS::EC2::Route',
+      }),
+      'CustomVPCPrivateSubnet3RouteTable35BB3935': dict({
+        'Metadata': dict({
+          'cdk_nag': dict({
+            'rules_to_suppress': list([
+              dict({
+                'id': 'AwsSolutions-EC28',
+                'reason': 'NAT Instance does not require autoscaling.',
+              }),
+              dict({
+                'id': 'AwsSolutions-EC29',
+                'reason': 'NAT Instance does not require autoscaling.',
+              }),
+            ]),
+          }),
+        }),
+        'Properties': dict({
+          'Tags': list([
+            dict({
+              'Key': 'Name',
+              'Value': 'ComfyUIStack/CustomVPC/PrivateSubnet3',
+            }),
+          ]),
+          'VpcId': dict({
+            'Ref': 'CustomVPC616E3387',
+          }),
+        }),
+        'Type': 'AWS::EC2::RouteTable',
+      }),
+      'CustomVPCPrivateSubnet3RouteTableAssociationF4C65F99': dict({
+        'Metadata': dict({
+          'cdk_nag': dict({
+            'rules_to_suppress': list([
+              dict({
+                'id': 'AwsSolutions-EC28',
+                'reason': 'NAT Instance does not require autoscaling.',
+              }),
+              dict({
+                'id': 'AwsSolutions-EC29',
+                'reason': 'NAT Instance does not require autoscaling.',
+              }),
+            ]),
+          }),
+        }),
+        'Properties': dict({
+          'RouteTableId': dict({
+            'Ref': 'CustomVPCPrivateSubnet3RouteTable35BB3935',
+          }),
+          'SubnetId': dict({
+            'Ref': 'CustomVPCPrivateSubnet3Subnet078A2C2C',
+          }),
+        }),
+        'Type': 'AWS::EC2::SubnetRouteTableAssociation',
+      }),
+      'CustomVPCPrivateSubnet3Subnet078A2C2C': dict({
+        'Metadata': dict({
+          'cdk_nag': dict({
+            'rules_to_suppress': list([
+              dict({
+                'id': 'AwsSolutions-EC28',
+                'reason': 'NAT Instance does not require autoscaling.',
+              }),
+              dict({
+                'id': 'AwsSolutions-EC29',
+                'reason': 'NAT Instance does not require autoscaling.',
+              }),
+            ]),
+          }),
+        }),
+        'Properties': dict({
+          'AvailabilityZone': 'dummy1c',
+          'CidrBlock': '10.0.5.0/24',
+          'MapPublicIpOnLaunch': False,
+          'Tags': list([
+            dict({
+              'Key': 'aws-cdk:subnet-name',
+              'Value': 'Private',
+            }),
+            dict({
+              'Key': 'aws-cdk:subnet-type',
+              'Value': 'Private',
+            }),
+            dict({
+              'Key': 'Name',
+              'Value': 'ComfyUIStack/CustomVPC/PrivateSubnet3',
             }),
           ]),
           'VpcId': dict({
@@ -2280,6 +2406,249 @@
         }),
         'Type': 'AWS::EC2::Subnet',
       }),
+      'CustomVPCPublicSubnet3DefaultRouteF01B894C': dict({
+        'DependsOn': list([
+          'CustomVPCVPCGW9371D645',
+        ]),
+        'Metadata': dict({
+          'cdk_nag': dict({
+            'rules_to_suppress': list([
+              dict({
+                'id': 'AwsSolutions-EC28',
+                'reason': 'NAT Instance does not require autoscaling.',
+              }),
+              dict({
+                'id': 'AwsSolutions-EC29',
+                'reason': 'NAT Instance does not require autoscaling.',
+              }),
+            ]),
+          }),
+        }),
+        'Properties': dict({
+          'DestinationCidrBlock': '0.0.0.0/0',
+          'GatewayId': dict({
+            'Ref': 'CustomVPCIGWCB65EB6B',
+          }),
+          'RouteTableId': dict({
+            'Ref': 'CustomVPCPublicSubnet3RouteTableBB4C6E4B',
+          }),
+        }),
+        'Type': 'AWS::EC2::Route',
+      }),
+      'CustomVPCPublicSubnet3NatInstance17FBB0C0': dict({
+        'DependsOn': list([
+          'CustomVPCPublicSubnet3NatInstanceInstanceRole9D0CF446',
+        ]),
+        'Metadata': dict({
+          'cdk_nag': dict({
+            'rules_to_suppress': list([
+              dict({
+                'id': 'AwsSolutions-EC28',
+                'reason': 'NAT Instance does not require autoscaling.',
+              }),
+              dict({
+                'id': 'AwsSolutions-EC29',
+                'reason': 'NAT Instance does not require autoscaling.',
+              }),
+            ]),
+          }),
+        }),
+        'Properties': dict({
+          'AvailabilityZone': 'dummy1c',
+          'IamInstanceProfile': dict({
+            'Ref': 'CustomVPCPublicSubnet3NatInstanceInstanceProfile0854869C',
+          }),
+          'ImageId': dict({
+            'Ref': 'SsmParameterValueawsserviceamiamazonlinuxlatestal2023amikernel61arm64C96584B6F00A464EAD1953AFF4B05118Parameter',
+          }),
+          'InstanceType': 't4g.nano',
+          'SecurityGroupIds': list([
+            dict({
+              'Fn::GetAtt': list([
+                'CustomVPCNatSecurityGroup0D7993B8',
+                'GroupId',
+              ]),
+            }),
+          ]),
+          'SourceDestCheck': False,
+          'SubnetId': dict({
+            'Ref': 'CustomVPCPublicSubnet3Subnet4C2CA60C',
+          }),
+          'Tags': list([
+            dict({
+              'Key': 'Name',
+              'Value': 'ComfyUIStack/CustomVPC/PublicSubnet3/NatInstance',
+            }),
+          ]),
+          'UserData': dict({
+            'Fn::Base64': '''
+              #!/bin/bash
+              yum install iptables-services -y
+              systemctl enable iptables
+              systemctl start iptables
+              echo "net.ipv4.ip_forward=1" > /etc/sysctl.d/custom-ip-forwarding.conf
+              sudo sysctl -p /etc/sysctl.d/custom-ip-forwarding.conf
+              sudo /sbin/iptables -t nat -A POSTROUTING -o $(route | awk '/^default/{print $NF}') -j MASQUERADE
+              sudo /sbin/iptables -F FORWARD
+              sudo service iptables save
+            ''',
+          }),
+        }),
+        'Type': 'AWS::EC2::Instance',
+      }),
+      'CustomVPCPublicSubnet3NatInstanceInstanceProfile0854869C': dict({
+        'Metadata': dict({
+          'cdk_nag': dict({
+            'rules_to_suppress': list([
+              dict({
+                'id': 'AwsSolutions-EC28',
+                'reason': 'NAT Instance does not require autoscaling.',
+              }),
+              dict({
+                'id': 'AwsSolutions-EC29',
+                'reason': 'NAT Instance does not require autoscaling.',
+              }),
+            ]),
+          }),
+        }),
+        'Properties': dict({
+          'Roles': list([
+            dict({
+              'Ref': 'CustomVPCPublicSubnet3NatInstanceInstanceRole9D0CF446',
+            }),
+          ]),
+        }),
+        'Type': 'AWS::IAM::InstanceProfile',
+      }),
+      'CustomVPCPublicSubnet3NatInstanceInstanceRole9D0CF446': dict({
+        'Metadata': dict({
+          'cdk_nag': dict({
+            'rules_to_suppress': list([
+              dict({
+                'id': 'AwsSolutions-EC28',
+                'reason': 'NAT Instance does not require autoscaling.',
+              }),
+              dict({
+                'id': 'AwsSolutions-EC29',
+                'reason': 'NAT Instance does not require autoscaling.',
+              }),
+            ]),
+          }),
+        }),
+        'Properties': dict({
+          'AssumeRolePolicyDocument': dict({
+            'Statement': list([
+              dict({
+                'Action': 'sts:AssumeRole',
+                'Effect': 'Allow',
+                'Principal': dict({
+                  'Service': 'ec2.amazonaws.com',
+                }),
+              }),
+            ]),
+            'Version': '2012-10-17',
+          }),
+          'Tags': list([
+            dict({
+              'Key': 'Name',
+              'Value': 'ComfyUIStack/CustomVPC/PublicSubnet3/NatInstance',
+            }),
+          ]),
+        }),
+        'Type': 'AWS::IAM::Role',
+      }),
+      'CustomVPCPublicSubnet3RouteTableAssociation75ABAE48': dict({
+        'Metadata': dict({
+          'cdk_nag': dict({
+            'rules_to_suppress': list([
+              dict({
+                'id': 'AwsSolutions-EC28',
+                'reason': 'NAT Instance does not require autoscaling.',
+              }),
+              dict({
+                'id': 'AwsSolutions-EC29',
+                'reason': 'NAT Instance does not require autoscaling.',
+              }),
+            ]),
+          }),
+        }),
+        'Properties': dict({
+          'RouteTableId': dict({
+            'Ref': 'CustomVPCPublicSubnet3RouteTableBB4C6E4B',
+          }),
+          'SubnetId': dict({
+            'Ref': 'CustomVPCPublicSubnet3Subnet4C2CA60C',
+          }),
+        }),
+        'Type': 'AWS::EC2::SubnetRouteTableAssociation',
+      }),
+      'CustomVPCPublicSubnet3RouteTableBB4C6E4B': dict({
+        'Metadata': dict({
+          'cdk_nag': dict({
+            'rules_to_suppress': list([
+              dict({
+                'id': 'AwsSolutions-EC28',
+                'reason': 'NAT Instance does not require autoscaling.',
+              }),
+              dict({
+                'id': 'AwsSolutions-EC29',
+                'reason': 'NAT Instance does not require autoscaling.',
+              }),
+            ]),
+          }),
+        }),
+        'Properties': dict({
+          'Tags': list([
+            dict({
+              'Key': 'Name',
+              'Value': 'ComfyUIStack/CustomVPC/PublicSubnet3',
+            }),
+          ]),
+          'VpcId': dict({
+            'Ref': 'CustomVPC616E3387',
+          }),
+        }),
+        'Type': 'AWS::EC2::RouteTable',
+      }),
+      'CustomVPCPublicSubnet3Subnet4C2CA60C': dict({
+        'Metadata': dict({
+          'cdk_nag': dict({
+            'rules_to_suppress': list([
+              dict({
+                'id': 'AwsSolutions-EC28',
+                'reason': 'NAT Instance does not require autoscaling.',
+              }),
+              dict({
+                'id': 'AwsSolutions-EC29',
+                'reason': 'NAT Instance does not require autoscaling.',
+              }),
+            ]),
+          }),
+        }),
+        'Properties': dict({
+          'AvailabilityZone': 'dummy1c',
+          'CidrBlock': '10.0.2.0/24',
+          'MapPublicIpOnLaunch': True,
+          'Tags': list([
+            dict({
+              'Key': 'aws-cdk:subnet-name',
+              'Value': 'Public',
+            }),
+            dict({
+              'Key': 'aws-cdk:subnet-type',
+              'Value': 'Public',
+            }),
+            dict({
+              'Key': 'Name',
+              'Value': 'ComfyUIStack/CustomVPC/PublicSubnet3',
+            }),
+          ]),
+          'VpcId': dict({
+            'Ref': 'CustomVPC616E3387',
+          }),
+        }),
+        'Type': 'AWS::EC2::Subnet',
+      }),
       'CustomVPCS340E05E64': dict({
         'Metadata': dict({
           'cdk_nag': dict({
@@ -2304,10 +2673,16 @@
               'Ref': 'CustomVPCPrivateSubnet2RouteTableBA12A594',
             }),
             dict({
+              'Ref': 'CustomVPCPrivateSubnet3RouteTable35BB3935',
+            }),
+            dict({
               'Ref': 'CustomVPCPublicSubnet1RouteTableD7678595',
             }),
             dict({
               'Ref': 'CustomVPCPublicSubnet2RouteTable253D0D06',
+            }),
+            dict({
+              'Ref': 'CustomVPCPublicSubnet3RouteTableBB4C6E4B',
             }),
           ]),
           'ServiceName': dict({
@@ -2600,7 +2975,7 @@
                     dict({
                       'Ref': 'AWS::URLSuffix',
                     }),
-                    '/cdk-hnb659fds-container-assets-123456789012-us-east-1:ac2a8c3fdddd5b0e4e0eee44111755a5a92b879349bcc64e58ef79c267f06b60',
+                    '/cdk-hnb659fds-container-assets-123456789012-us-east-1:328da18ee4116c7f1f9b9f6c6515879e0619d43628a6bc6c16ad561119173531',
                   ]),
                 ]),
               }),
@@ -2834,6 +3209,9 @@
                 }),
                 dict({
                   'Ref': 'CustomVPCPrivateSubnet2SubnetA2CC0D16',
+                }),
+                dict({
+                  'Ref': 'CustomVPCPrivateSubnet3Subnet078A2C2C',
                 }),
               ]),
             }),
@@ -3632,7 +4010,7 @@
         'Properties': dict({
           'Code': dict({
             'S3Bucket': 'cdk-hnb659fds-assets-123456789012-us-east-1',
-            'S3Key': '957f2a6587347cb8fb88078bec89b73e8a1435d19e6c9ad1ad7dc85c071c31fc.zip',
+            'S3Key': '5c36087592e6ef9b5acded22ed42a7dbbbb1ae5fd737b796370c9954265814d0.zip',
           }),
           'Handler': 'function.lambda_handler',
           'Role': dict({
@@ -3716,7 +4094,7 @@
         'Properties': dict({
           'Code': dict({
             'S3Bucket': 'cdk-hnb659fds-assets-123456789012-us-east-1',
-            'S3Key': '2d1d5f493105453e308878a4d8d97e9287535259be1cd883dfc06ca7988c3e9e.zip',
+            'S3Key': '25eaca20d5feab25be1f3c1d4add4c2b04280aed06976811040aa9a98a82ba0d.zip',
           }),
           'Environment': dict({
             'Variables': dict({
@@ -3821,7 +4199,7 @@
         'Properties': dict({
           'Code': dict({
             'S3Bucket': 'cdk-hnb659fds-assets-123456789012-us-east-1',
-            'S3Key': '2d1d5f493105453e308878a4d8d97e9287535259be1cd883dfc06ca7988c3e9e.zip',
+            'S3Key': '25eaca20d5feab25be1f3c1d4add4c2b04280aed06976811040aa9a98a82ba0d.zip',
           }),
           'Environment': dict({
             'Variables': dict({
@@ -3872,7 +4250,7 @@
         'Properties': dict({
           'Code': dict({
             'S3Bucket': 'cdk-hnb659fds-assets-123456789012-us-east-1',
-            'S3Key': '2d1d5f493105453e308878a4d8d97e9287535259be1cd883dfc06ca7988c3e9e.zip',
+            'S3Key': '25eaca20d5feab25be1f3c1d4add4c2b04280aed06976811040aa9a98a82ba0d.zip',
           }),
           'Environment': dict({
             'Variables': dict({
@@ -3913,7 +4291,7 @@
         'Properties': dict({
           'Code': dict({
             'S3Bucket': 'cdk-hnb659fds-assets-123456789012-us-east-1',
-            'S3Key': '2d1d5f493105453e308878a4d8d97e9287535259be1cd883dfc06ca7988c3e9e.zip',
+            'S3Key': '25eaca20d5feab25be1f3c1d4add4c2b04280aed06976811040aa9a98a82ba0d.zip',
           }),
           'Environment': dict({
             'Variables': dict({
@@ -4091,7 +4469,7 @@
         'Properties': dict({
           'Code': dict({
             'S3Bucket': 'cdk-hnb659fds-assets-123456789012-us-east-1',
-            'S3Key': '2d1d5f493105453e308878a4d8d97e9287535259be1cd883dfc06ca7988c3e9e.zip',
+            'S3Key': '25eaca20d5feab25be1f3c1d4add4c2b04280aed06976811040aa9a98a82ba0d.zip',
           }),
           'Environment': dict({
             'Variables': dict({
@@ -4136,7 +4514,7 @@
         'Properties': dict({
           'Code': dict({
             'S3Bucket': 'cdk-hnb659fds-assets-123456789012-us-east-1',
-            'S3Key': '2d1d5f493105453e308878a4d8d97e9287535259be1cd883dfc06ca7988c3e9e.zip',
+            'S3Key': '25eaca20d5feab25be1f3c1d4add4c2b04280aed06976811040aa9a98a82ba0d.zip',
           }),
           'Environment': dict({
             'Variables': dict({
@@ -4152,7 +4530,7 @@
                     dict({
                       'Ref': 'ComfyUIuserPoolalbappclient47C9BB97',
                     }),
-                    '&logout_uri=https%3A//%24%7BToken%5BTOKEN.1288%5D%7D',
+                    '&logout_uri=https%3A//%24%7BToken%5BTOKEN.ID%5D%7D',
                   ]),
                 ]),
               }),
@@ -4204,7 +4582,7 @@
         'Properties': dict({
           'Code': dict({
             'S3Bucket': 'cdk-hnb659fds-assets-123456789012-us-east-1',
-            'S3Key': '1d4a713beb6b6b886e4ee62ba8dcfb35fc4c3215c3e6a1137f4314263c4673fb.zip',
+            'S3Key': 'ad389d1f9e1a2476ee176568349afc1f525219f7cea4842c50fbad43cae7acd2.zip',
           }),
           'Environment': dict({
             'Variables': dict({
