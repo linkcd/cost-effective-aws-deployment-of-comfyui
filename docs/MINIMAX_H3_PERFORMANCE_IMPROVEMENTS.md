@@ -310,17 +310,42 @@ An upstream, unmerged ComfyUI pull request proposes keeping the MiniMax H3 audio
 
 ## Prioritized improvement checklist
 
+Status as of 2026-09-03:
+
+| Workstream | Status | Result or next action |
+|---|---|---|
+| CUDA 13 / PyTorch cu130 image | **Done and live** | ECS revision 7 runs PyTorch `2.14.0+cu130` with CUDA 13 |
+| Turbo warm-run validation | **Done and live** | 8-step warm run completed in 207.88 seconds with `0 models unloaded` |
+| Host OOM mitigation | **Done and live** | Pinned memory disabled; consecutive generations completed and the task remained healthy |
+| NVMe cache application logic | **Done in code** | Manifest sync, EBS fallback, startup configuration, and tests are complete |
+| NVMe host and ECS mount activation | **To do next** | Review a no-network CDK diff, replace the host, populate the cache, and benchmark it |
+| Comfy Kitchen attention A/B test | **To do** | Compare timing and quality against the current PyTorch attention path |
+| Four-step preview preset | **To do** | Benchmark preview speed and acceptable quality |
+| gp3 throughput increase | **Deferred** | Keep the existing 125 MiB/s setting while testing NVMe |
+| GPU instance upgrade | **Deferred** | Reconsider only after NVMe and attention benchmarks |
+
+### Phase 0: Host OOM stability
+
+- [x] Confirm that the post-generation exits were host OOM kills with exit code 137.
+- [x] Add the configurable `comfyui_disable_pinned_memory` setting.
+- [x] Deploy ECS revision 7 with `--disable-pinned-memory`.
+- [x] Verify `VmPin: 0 kB` and no swap use.
+- [x] Complete a 15-second, 20-step non-Turbo stress generation.
+- [x] Complete a consecutive 15-second, 8-step warm Turbo generation.
+- [x] Confirm the original task remains healthy for more than five minutes after output.
+- [ ] Continue monitoring host RAM when testing larger resolutions or longer durations.
+
 ### Phase 1: No infrastructure change
 
-- [ ] Run the exact same workflow again without restarting the ECS task.
-- [ ] Record the warm-run total and phase timings.
-- [ ] Change `Boolean (Enable Lightning LoRA)` to true.
-- [ ] Confirm that the LoRA branch and reduced-step branch are both selected.
-- [ ] Use 8 steps for final output.
+- [x] Run the workflow again without restarting the ECS task.
+- [x] Record the warm-run total and phase timings.
+- [x] Enable `Boolean (Enable Lightning LoRA)` for the measured warm run.
+- [x] Confirm that the LoRA branch and reduced-step branch are both selected.
+- [x] Validate the 8-step Turbo final-output path.
 - [ ] Test 4 steps for previews.
 - [ ] Add or verify `MiniMaxH3SigmaShift` with video shift `12` and audio shift `3`.
 - [ ] Test the ModelTC reference workflow using Euler sampling and the simple scheduler.
-- [ ] Keep output near 0.4 MP for the first comparison.
+- [x] Keep output near 0.4 MP for the first comparison.
 - [ ] Use 2–3 second preview clips while developing prompts.
 
 Recommended Turbo presets:
@@ -342,11 +367,11 @@ Expected result:
 - [x] Install and pin the matching PyTorch cu130 package set.
 - [x] Pin the ComfyUI and ComfyUI Manager revisions.
 - [x] Add build-time version/import assertions and runtime version logging.
-- [ ] Rebuild and deploy the ComfyUI image.
-- [ ] Confirm `torch.version.cuda` reports CUDA 13.
-- [ ] Confirm the cu130 optimization warning disappears.
-- [ ] Confirm Comfy Kitchen CUDA/Triton backends are available.
-- [ ] Benchmark the default PyTorch attention backend.
+- [x] Rebuild and deploy the ComfyUI image.
+- [x] Confirm `torch.version.cuda` reports CUDA 13.
+- [x] Confirm the previous cu130 optimization warning disappears.
+- [x] Confirm the Comfy Kitchen CUDA backend is active and Triton is available.
+- [x] Benchmark the default PyTorch attention backend through the live H3 runs.
 - [ ] Benchmark `ModelAttentionBackend` with Comfy Kitchen attention.
 - [ ] Keep only the faster configuration if output quality remains acceptable.
 
@@ -368,7 +393,11 @@ The current `g6e.2xlarge` has an unused local NVMe device large enough for the a
 - [x] Preserve the canonical copies on EBS because instance-store data is ephemeral.
 - [x] Rebuild the cache automatically when a host is replaced.
 - [x] Preserve the live REX-Ray volume name and pin the host to the volume's subnet.
+- [ ] Run `cdk diff` and confirm there are no VPC, subnet, route, or security-group changes.
+- [ ] Deploy the ASG launch-template and ECS host-mount changes.
 - [ ] Deploy and verify cold cache population against the existing EBS volume.
+- [ ] Confirm startup reports `cache_ready=true` and ComfyUI lists NVMe before EBS.
+- [ ] Benchmark the first post-replacement run and a same-host task restart.
 - [ ] Optionally run a controlled warm-up workflow after startup.
 
 Benefits:
@@ -452,6 +481,8 @@ These are estimates to validate, not guarantees:
 | Current cold 20-step workflow | Measured 10:18 |
 | Image-only cu130 cold 8-step workflow on EBS | Measured 6:14.60 |
 | Replacement-task cu130 cold 8-step workflow on EBS | Measured 6:17.66 |
+| Revision 7 cold 15-second, 20-step non-Turbo workflow | Measured 12:46 |
+| Revision 7 warm 15-second, 8-step Turbo workflow | Measured 3:27.88 |
 | Cold 8-step Turbo without storage change | Approximately 8:06 |
 | Cold 4-step Turbo without storage change | Approximately 7:23 |
 | Warm or NVMe-cached 8-step Turbo on L40S | Approximately 2–4 minutes |
