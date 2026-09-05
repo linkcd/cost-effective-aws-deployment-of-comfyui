@@ -183,8 +183,6 @@ wget -c https://huggingface.co/ai-forever/Real-ESRGAN/blob/main/RealESRGAN_x2.pt
     - [自动/定期缩容](docs/DEPLOY_OPTION.md#scale-down-automatically--on-schedule)
     - [使用 NAT 实例而不是 NAT 网关](docs/DEPLOY_OPTION.md#use-nat-insatnce-instead-of-nat-gateway)
 - [使用自定义域名](docs/DEPLOY_OPTION.md#using-a-custom-domain)
-- [监控和通知](docs/DEPLOY_OPTION.md#monitoring-and-notifications)
-    - [Slack 集成](docs/DEPLOY_OPTION.md#slack-integration)
 
 
 ### 删除部署并清理资源

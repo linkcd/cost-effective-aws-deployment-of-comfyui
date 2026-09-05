@@ -3,8 +3,6 @@ from aws_cdk import (
     CfnOutput,
     aws_ecs as ecs,
     aws_servicediscovery as servicediscovery,
-    aws_chatbot as chatbot,
-    aws_iam as iam,
 )
 from constructs import Construct
 
@@ -57,9 +55,6 @@ class ComfyUIStack(Stack):
                  comfyui_disable_pinned_memory: bool = False,
                  comfyui_ebs_volume_name: str = None,
                  comfyui_subnet_id: str = None,
-                 # Slack
-                 slack_workspace_id: str = None,
-                 slack_channel_id: str = None,
                  **kwargs) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
@@ -140,8 +135,6 @@ class ComfyUIStack(Stack):
                 enable_nvme_model_cache=enable_nvme_model_cache,
                 subnet_id=comfyui_subnet_id,
                 desired_capacity=1,
-                slack_workspace_id=slack_workspace_id,
-                slack_channel_id=slack_channel_id,
             )
 
         # ECS
@@ -161,8 +154,6 @@ class ComfyUIStack(Stack):
                 enable_nvme_model_cache=enable_nvme_model_cache,
                 disable_pinned_memory=comfyui_disable_pinned_memory,
                 comfyui_ebs_volume_name=comfyui_ebs_volume_name,
-                slack_workspace_id=slack_workspace_id,
-                slack_channel_id=slack_channel_id,
             )
         else:
             raise ValueError("ComfyUI must be enabled for ECS deployment.")
@@ -194,53 +185,6 @@ class ComfyUIStack(Stack):
         
             admin_construct.add_environments(
                 lambda_admin_rule=alb_construct.lambda_admin_rule,
-            )
-
-        # Slack
-
-        if slack_workspace_id and slack_channel_id:
-            slack_notification_policy = iam.ManagedPolicy(
-                self,
-                "SlackNotificationReadPolicy",
-                description=(
-                    "Read-only CloudWatch access used to render operational "
-                    "notifications in Slack."
-                ),
-                statements=[
-                    iam.PolicyStatement(
-                        actions=[
-                            "cloudwatch:DescribeAlarmHistory",
-                            "cloudwatch:DescribeAlarms",
-                            "cloudwatch:DescribeAlarmsForMetric",
-                            "cloudwatch:GetMetricData",
-                            "cloudwatch:GetMetricStatistics",
-                            "cloudwatch:GetMetricWidgetImage",
-                            "cloudwatch:ListMetrics",
-                        ],
-                        resources=["*"],
-                        conditions={
-                            "StringEquals": {
-                                "aws:RequestedRegion": self.region,
-                            },
-                        },
-                    ),
-                ],
-            )
-            slack_channel = chatbot.SlackChannelConfiguration(
-                self, "SlackChannel",
-                slack_channel_configuration_name="TestChannel",
-                slack_workspace_id=slack_workspace_id,
-                slack_channel_id=slack_channel_id,
-                notification_topics=[
-                    asg_comfy.asg_events_topic,
-                    ecs_construct.ecs_health_topic,
-                ],
-                # CDK otherwise defaults the channel guardrail to
-                # AdministratorAccess.
-                guardrail_policies=[slack_notification_policy],
-            )
-            slack_channel.role.add_managed_policy(
-                slack_notification_policy
             )
 
         # Output

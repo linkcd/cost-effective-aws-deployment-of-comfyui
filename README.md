@@ -537,7 +537,6 @@ This deployment implements **scale-to-zero**, not horizontal workload scaling. T
 | Scheduled start or stop time | ASG scheduled action; no Lambda | Directly sets desired capacity to `1` or `0`. |
 | ASG instance-termination lifecycle action | EventBridge → `ScaleinListenerFunction` Lambda | After confirming desired capacity is `0` and all ECS services are down, changes the ALB admin rule so both `/` and `/admin` reach the admin page. This Lambda updates routing; it does not initiate shutdown. |
 | Click **Restart Docker** (`/admin/restart`) | `RestartDockerFunction` Lambda → Systems Manager | Restarts Docker on the existing GPU instance. This is a restart operation, not a scale-up or scale-down action. |
-| ASG launch/termination error, when Slack notifications are configured | EventBridge → ASG monitor Lambda → SNS/AWS Chatbot | Sends an error notification. It observes failures but does not change desired capacity. |
 
 All browser-facing admin routes are protected by the configured Cognito authentication.
 
@@ -634,8 +633,6 @@ The deployment wrapper forwards these optional values to CodeBuild. See
 | `host_name` | `None` | Custom domain hostname (requires Route 53 hosted zone) |
 | `domain_name` | `None` | Custom domain name |
 | `hosted_zone_id` | `None` | Route 53 hosted zone ID |
-| `slack_workspace_id` | `None` | Slack workspace ID for notifications (enables ASG/ECS alerts) |
-| `slack_channel_id` | `None` | Slack channel ID for notifications |
 
 > **Note:** The defaults above are from `ComfyUIStack`. Your `app.py` may override them. The current `app.py` sets `use_spot=False`, `auto_scale_down=False`, `self_sign_up_enabled=True`, and pins the live Tokyo EBS volume and subnet so cache deployment preserves existing data.
 
@@ -645,7 +642,7 @@ This sample deployment prioritizes cost and simplicity. The following trade-offs
 
 **Operational Excellence**
 - CI/CD via CodeBuild (`make deploy`). No local Docker required. No automated rollback — failed deploys require manual intervention or redeployment.
-- Monitoring relies on CloudWatch Container Insights (enabled by default). Optional Slack notifications for ASG and ECS health events.
+- Monitoring relies on CloudWatch Container Insights (enabled by default).
 
 **Security**
 - Authentication via Amazon Cognito (user pool or SAML). Optional WAF with IP allowlisting and rate limiting.
@@ -686,7 +683,6 @@ This solution creates separate workload roles so that runtime components do not 
 | ECS Task Role | `ecs-tasks.amazonaws.com` | Scoped S3 and Bedrock inline policies | ComfyUI application access to its S3 bucket and invokable Bedrock model resources |
 | Admin Lambda Roles | `lambda.amazonaws.com` | Function-specific inline policies | Each admin function receives only its required ASG, ECS, SSM, or listener-rule actions |
 | Cert Lambda Role | `lambda.amazonaws.com` | Stack-tag-scoped ACM inline policy | Create and delete only the self-signed certificate owned by this stack |
-| Slack Notification Role | `chatbot.amazonaws.com` | Notification-only CloudWatch read policy and matching guardrail | Render ASG/ECS SNS alerts without Amazon Q or administrator permissions |
 | CodeBuild Service Role | `codebuild.amazonaws.com` | Source/log access and tagged CDK bootstrap role assumption | Build and deploy without attaching `AdministratorAccess` directly to CodeBuild |
 
 AWS list and describe APIs that do not support resource ARNs retain `Resource: "*"`, with region or cluster conditions where the service supports them. Mutating actions are resource-scoped.

@@ -23,19 +23,6 @@ def synthesized_template():
     return Template.from_stack(stack).to_json()
 
 
-@lru_cache(maxsize=1)
-def synthesized_slack_template():
-    app = cdk.App()
-    stack = ComfyUIStack(
-        app,
-        "ComfyUIStack",
-        env=cdk.Environment(account="123456789012", region="us-east-1"),
-        slack_workspace_id="T01234567",
-        slack_channel_id="C01234567",
-    )
-    return Template.from_stack(stack).to_json()
-
-
 def policy_statements(template):
     for resource in template["Resources"].values():
         if resource["Type"] != "AWS::IAM::Policy":
@@ -48,7 +35,6 @@ def policy_statements(template):
 
 def test_full_access_managed_policies_are_not_used():
     template_json = json.dumps(synthesized_template())
-    slack_template_json = json.dumps(synthesized_slack_template())
 
     assert "AmazonEC2FullAccess" not in template_json
     assert "AutoScalingFullAccess" not in template_json
@@ -56,9 +42,7 @@ def test_full_access_managed_policies_are_not_used():
     assert "autoscaling:DescribeScalingActivities" not in template_json
     assert "ecs:ListServices" not in template_json
     assert "elasticloadbalancing:DescribeRules" not in template_json
-    assert "AmazonQFullAccess" not in slack_template_json
-    assert "CloudWatchReadOnlyAccess" not in slack_template_json
-    assert "AdministratorAccess" not in slack_template_json
+    assert "AWS::Chatbot::" not in template_json
 
     codebuild_template = (ROOT / "codebuild-pipeline.yaml").read_text(
         encoding="utf-8"
@@ -93,41 +77,6 @@ def test_codebuild_forwards_optional_existing_storage_configuration():
     assert "COMFYUI_EBS_VOLUME_NAME" in deployment_script
     assert "COMFYUI_SUBNET_ID" in deployment_script
     assert "--environment-variables-override" in deployment_script
-
-
-def test_slack_notifications_use_read_only_guardrail():
-    resources = synthesized_slack_template()["Resources"]
-    channel = next(
-        resource
-        for resource in resources.values()
-        if resource["Type"] == "AWS::Chatbot::SlackChannelConfiguration"
-    )
-    guardrail_policy_id = channel["Properties"]["GuardrailPolicies"][0][
-        "Ref"
-    ]
-    guardrail_policy = resources[guardrail_policy_id]
-    role_id = channel["Properties"]["IamRoleArn"]["Fn::GetAtt"][0]
-    role = resources[role_id]
-    statements = guardrail_policy["Properties"]["PolicyDocument"]["Statement"]
-
-    assert guardrail_policy["Type"] == "AWS::IAM::ManagedPolicy"
-    assert role["Properties"]["ManagedPolicyArns"] == [
-        {"Ref": guardrail_policy_id}
-    ]
-    assert len(statements) == 1
-    assert set(statements[0]["Action"]) == {
-        "cloudwatch:DescribeAlarmHistory",
-        "cloudwatch:DescribeAlarms",
-        "cloudwatch:DescribeAlarmsForMetric",
-        "cloudwatch:GetMetricData",
-        "cloudwatch:GetMetricStatistics",
-        "cloudwatch:GetMetricWidgetImage",
-        "cloudwatch:ListMetrics",
-    }
-    assert statements[0]["Resource"] == "*"
-    assert statements[0]["Condition"]["StringEquals"][
-        "aws:RequestedRegion"
-    ] == "us-east-1"
 
 
 def test_sensitive_write_actions_are_resource_scoped():

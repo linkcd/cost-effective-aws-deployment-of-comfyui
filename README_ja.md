@@ -199,8 +199,6 @@ ComfyUI の機能を最大限に活用し、シームレスな体験を確保す
     - [自動/スケジュールでスケールダウン](docs/DEPLOY_OPTION.md#scale-down-automatically--on-schedule)
     - [NAT ゲートウェイの代わりに NAT インスタンスを使用する](docs/DEPLOY_OPTION.md#use-nat-insatnce-instead-of-nat-gateway)
 - [カスタムドメインの使用](docs/DEPLOY_OPTION.md#using-a-custom-domain)
-- [監視と通知](docs/DEPLOY_OPTION.md#monitoring-and-notifications)
-    - [Slack 連携](docs/DEPLOY_OPTION.md#slack-integration)
 
 ### デプロイメントを削除してリソースをクリーンアップする
 
