@@ -61,16 +61,23 @@ upload_source() {
 case "${1:-deploy}" in
   setup)
     CDK_CLI="$PROJECT_DIR/node_modules/.bin/cdk"
+    VENV_BIN="$PROJECT_DIR/venv/bin"
     if [ ! -x "$CDK_CLI" ]; then
       echo "Error: AWS CDK CLI is not installed."
       echo "Run 'npm install' or use 'make setup' first."
+      exit 1
+    fi
+    if [ ! -x "$VENV_BIN/python" ]; then
+      echo "Error: Python dependencies are not installed."
+      echo "Run 'make setup' so the project virtual environment is created."
       exit 1
     fi
     ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
     echo "Bootstrapping CDK deployment roles..."
     (
       cd "$PROJECT_DIR"
-      CDK_DEFAULT_ACCOUNT="$ACCOUNT_ID" \
+      PATH="$VENV_BIN:$PATH" \
+        CDK_DEFAULT_ACCOUNT="$ACCOUNT_ID" \
         CDK_DEFAULT_REGION="$REGION" \
         "$CDK_CLI" bootstrap "aws://${ACCOUNT_ID}/${REGION}"
     )

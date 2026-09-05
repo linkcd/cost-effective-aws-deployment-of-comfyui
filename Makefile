@@ -1,7 +1,7 @@
 all: deploy
 
 # --- First-time setup (no Docker required) ---
-setup: install-node
+setup: install-python install-node
 	@echo "Creating CodeBuild infrastructure..."
 	./scripts/run_codebuild.sh setup
 
