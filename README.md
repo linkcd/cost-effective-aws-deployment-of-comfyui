@@ -670,6 +670,7 @@ This solution creates separate workload roles so that runtime components do not 
 | ECS Task Role | `ecs-tasks.amazonaws.com` | Scoped S3 and Bedrock inline policies | ComfyUI application access to its S3 bucket and invokable Bedrock model resources |
 | Admin Lambda Roles | `lambda.amazonaws.com` | Function-specific inline policies | Each admin function receives only its required ASG, ECS, SSM, or listener-rule actions |
 | Cert Lambda Role | `lambda.amazonaws.com` | Stack-tag-scoped ACM inline policy | Create and delete only the self-signed certificate owned by this stack |
+| Slack Notification Role | `chatbot.amazonaws.com` | Notification-only CloudWatch read policy and matching guardrail | Render ASG/ECS SNS alerts without Amazon Q or administrator permissions |
 | CodeBuild Service Role | `codebuild.amazonaws.com` | Source/log access and tagged CDK bootstrap role assumption | Build and deploy without attaching `AdministratorAccess` directly to CodeBuild |
 
 AWS list and describe APIs that do not support resource ARNs retain `Resource: "*"`, with region or cluster conditions where the service supports them. Mutating actions are resource-scoped.

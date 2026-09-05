@@ -78,11 +78,13 @@ RUN mkdir -p /home/user/bin
 COPY --chown=user:user scripts/configure_comfyui_manager.py /home/user/bin/configure_comfyui_manager.py
 COPY --chown=user:user scripts/patch_comfyui_frontend_generated_assets.py /home/user/bin/patch_comfyui_frontend_generated_assets.py
 COPY --chown=user:user scripts/patch_comfyui_manager_version_parser.py /home/user/bin/patch_comfyui_manager_version_parser.py
+COPY --chown=user:user scripts/patch_comfyui_privacy_logging.py /home/user/bin/patch_comfyui_privacy_logging.py
 COPY --chown=user:user scripts/report_runtime.py /home/user/bin/report_runtime.py
 COPY --chown=user:user scripts/sync_model_cache.py /home/user/bin/sync_model_cache.py
 COPY --chown=user:user comfyui_config/h3_model_cache_manifest.json /home/user/bin/h3_model_cache_manifest.json
 COPY --chown=user:user scripts/start_comfyui.sh /home/user/bin/start_comfyui.sh
 RUN python /home/user/bin/patch_comfyui_frontend_generated_assets.py
+RUN python /home/user/bin/patch_comfyui_privacy_logging.py /home/user/opt/ComfyUI
 RUN chmod +x /home/user/bin/start_comfyui.sh /home/user/bin/sync_model_cache.py
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15m --retries=3 \

@@ -32,6 +32,7 @@ fi
 
 python /home/user/bin/report_runtime.py
 python /home/user/bin/patch_comfyui_manager_version_parser.py "${MANAGER_UTIL}"
+python /home/user/bin/patch_comfyui_privacy_logging.py "${COMFYUI_ROOT}"
 python /home/user/bin/configure_comfyui_manager.py "${MANAGER_CONFIG}"
 
 socat \

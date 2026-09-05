@@ -22,6 +22,19 @@ def synthesized_template():
     return Template.from_stack(stack).to_json()
 
 
+@lru_cache(maxsize=1)
+def synthesized_slack_template():
+    app = cdk.App()
+    stack = ComfyUIStack(
+        app,
+        "ComfyUIStack",
+        env=cdk.Environment(account="123456789012", region="us-east-1"),
+        slack_workspace_id="T01234567",
+        slack_channel_id="C01234567",
+    )
+    return Template.from_stack(stack).to_json()
+
+
 def policy_statements(template):
     for resource in template["Resources"].values():
         if resource["Type"] != "AWS::IAM::Policy":
@@ -34,6 +47,7 @@ def policy_statements(template):
 
 def test_full_access_managed_policies_are_not_used():
     template_json = json.dumps(synthesized_template())
+    slack_template_json = json.dumps(synthesized_slack_template())
 
     assert "AmazonEC2FullAccess" not in template_json
     assert "AutoScalingFullAccess" not in template_json
@@ -41,12 +55,50 @@ def test_full_access_managed_policies_are_not_used():
     assert "autoscaling:DescribeScalingActivities" not in template_json
     assert "ecs:ListServices" not in template_json
     assert "elasticloadbalancing:DescribeRules" not in template_json
+    assert "AmazonQFullAccess" not in slack_template_json
+    assert "CloudWatchReadOnlyAccess" not in slack_template_json
+    assert "AdministratorAccess" not in slack_template_json
 
     codebuild_template = (ROOT / "codebuild-pipeline.yaml").read_text(
         encoding="utf-8"
     )
     assert "AdministratorAccess" not in codebuild_template
     assert "cdk-hnb659fds-deploy-role" in codebuild_template
+
+
+def test_slack_notifications_use_read_only_guardrail():
+    resources = synthesized_slack_template()["Resources"]
+    channel = next(
+        resource
+        for resource in resources.values()
+        if resource["Type"] == "AWS::Chatbot::SlackChannelConfiguration"
+    )
+    guardrail_policy_id = channel["Properties"]["GuardrailPolicies"][0][
+        "Ref"
+    ]
+    guardrail_policy = resources[guardrail_policy_id]
+    role_id = channel["Properties"]["IamRoleArn"]["Fn::GetAtt"][0]
+    role = resources[role_id]
+    statements = guardrail_policy["Properties"]["PolicyDocument"]["Statement"]
+
+    assert guardrail_policy["Type"] == "AWS::IAM::ManagedPolicy"
+    assert role["Properties"]["ManagedPolicyArns"] == [
+        {"Ref": guardrail_policy_id}
+    ]
+    assert len(statements) == 1
+    assert set(statements[0]["Action"]) == {
+        "cloudwatch:DescribeAlarmHistory",
+        "cloudwatch:DescribeAlarms",
+        "cloudwatch:DescribeAlarmsForMetric",
+        "cloudwatch:GetMetricData",
+        "cloudwatch:GetMetricStatistics",
+        "cloudwatch:GetMetricWidgetImage",
+        "cloudwatch:ListMetrics",
+    }
+    assert statements[0]["Resource"] == "*"
+    assert statements[0]["Condition"]["StringEquals"][
+        "aws:RequestedRegion"
+    ] == "us-east-1"
 
 
 def test_sensitive_write_actions_are_resource_scoped():
@@ -83,6 +135,30 @@ def test_scopeable_rexray_describe_action_uses_volume_arn():
             actions = [actions]
         if "ec2:DescribeVolumeAttribute" in actions:
             assert statement["Resource"] != "*"
+
+
+def test_rexray_can_only_create_the_configured_empty_encrypted_volume():
+    statement = next(
+        statement
+        for statement in policy_statements(synthesized_template())
+        if statement["Action"] == "ec2:CreateVolume"
+    )
+
+    resources = statement["Resource"]
+    if not isinstance(resources, list):
+        resources = [resources]
+    resource_json = json.dumps(resources)
+    conditions = statement["Condition"]
+
+    assert ":volume/*" in resource_json
+    assert ":snapshot/*" not in resource_json
+    assert conditions["Bool"]["ec2:Encrypted"] == "true"
+    assert conditions["StringEquals"]["ec2:VolumeType"] == "gp3"
+    assert conditions["StringEquals"]["aws:RequestedRegion"] == {
+        "Ref": "AWS::Region"
+    }
+    assert conditions["NumericEquals"]["ec2:VolumeSize"] == "5000"
+    assert conditions["Null"]["ec2:ParentSnapshot"] == "true"
 
 
 def test_ecs_task_and_execution_roles_are_separate():
@@ -143,3 +219,31 @@ def test_dockerfile_has_comfyui_healthcheck():
 
     assert "HEALTHCHECK" in dockerfile
     assert "http://localhost:8181/system_stats" in dockerfile
+
+
+def test_ecs_application_logs_expire_after_one_day():
+    resources = synthesized_template()["Resources"]
+    task_definition = next(
+        resource
+        for resource in resources.values()
+        if resource["Type"] == "AWS::ECS::TaskDefinition"
+    )
+    log_group_id = task_definition["Properties"]["ContainerDefinitions"][0][
+        "LogConfiguration"
+    ]["Options"]["awslogs-group"]["Ref"]
+
+    assert resources[log_group_id]["Type"] == "AWS::Logs::LogGroup"
+    assert resources[log_group_id]["Properties"]["RetentionInDays"] == 1
+
+
+def test_cloudwatch_logs_are_not_exported_to_s3():
+    template = synthesized_template()
+    resource_types = {
+        resource["Type"] for resource in template["Resources"].values()
+    }
+    template_json = json.dumps(template)
+
+    assert "AWS::Logs::SubscriptionFilter" not in resource_types
+    assert '"LogDestinationType": "s3"' not in template_json
+    assert "access_logs.s3.enabled" not in template_json
+    assert "logs:CreateExportTask" not in template_json

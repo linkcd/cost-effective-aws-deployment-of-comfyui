@@ -1323,55 +1323,40 @@
                   'Bool': dict({
                     'ec2:Encrypted': 'true',
                   }),
+                  'Null': dict({
+                    'ec2:ParentSnapshot': 'true',
+                  }),
+                  'NumericEquals': dict({
+                    'ec2:VolumeSize': '5000',
+                  }),
                   'StringEquals': dict({
                     'aws:RequestedRegion': dict({
                       'Ref': 'AWS::Region',
                     }),
+                    'ec2:VolumeType': 'gp3',
                   }),
                 }),
                 'Effect': 'Allow',
-                'Resource': list([
-                  dict({
-                    'Fn::Join': list([
-                      '',
-                      list([
-                        'arn:',
-                        dict({
-                          'Ref': 'AWS::Partition',
-                        }),
-                        ':ec2:',
-                        dict({
-                          'Ref': 'AWS::Region',
-                        }),
-                        ':',
-                        dict({
-                          'Ref': 'AWS::AccountId',
-                        }),
-                        ':volume/*',
-                      ]),
+                'Resource': dict({
+                  'Fn::Join': list([
+                    '',
+                    list([
+                      'arn:',
+                      dict({
+                        'Ref': 'AWS::Partition',
+                      }),
+                      ':ec2:',
+                      dict({
+                        'Ref': 'AWS::Region',
+                      }),
+                      ':',
+                      dict({
+                        'Ref': 'AWS::AccountId',
+                      }),
+                      ':volume/*',
                     ]),
-                  }),
-                  dict({
-                    'Fn::Join': list([
-                      '',
-                      list([
-                        'arn:',
-                        dict({
-                          'Ref': 'AWS::Partition',
-                        }),
-                        ':ec2:',
-                        dict({
-                          'Ref': 'AWS::Region',
-                        }),
-                        ':',
-                        dict({
-                          'Ref': 'AWS::AccountId',
-                        }),
-                        ':snapshot/*',
-                      ]),
-                    ]),
-                  }),
-                ]),
+                  ]),
+                }),
               }),
               dict({
                 'Action': list([
@@ -3246,6 +3231,10 @@
                   }),
                 }),
                 dict({
+                  'Name': 'COMFYUI_DISABLE_API_REQUEST_LOGGING',
+                  'Value': '1',
+                }),
+                dict({
                   'Name': 'COMFYUI_MODEL_CACHE_ENABLED',
                   'Value': '1',
                 }),
@@ -3273,7 +3262,7 @@
                     dict({
                       'Ref': 'AWS::URLSuffix',
                     }),
-                    '/cdk-hnb659fds-container-assets-123456789012-us-east-1:c5e5ada1c45fbe34184b6d618b3bd488329fbaf9d138decb56cdae3619c9f4cd',
+                    '/cdk-hnb659fds-container-assets-123456789012-us-east-1:f59fa514534d43e0cbfcfabd8948a8ac8fd71d68fce5cd087e468b3adda7e9ac',
                   ]),
                 ]),
               }),
@@ -3914,7 +3903,7 @@
       'EcsConstructEcsConstructLogGroupB5CE295D': dict({
         'DeletionPolicy': 'Delete',
         'Properties': dict({
-          'RetentionInDays': 731,
+          'RetentionInDays': 1,
         }),
         'Type': 'AWS::Logs::LogGroup',
         'UpdateReplacePolicy': 'Delete',

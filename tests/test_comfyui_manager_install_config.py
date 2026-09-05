@@ -35,6 +35,7 @@ def test_creates_manager_config_with_install_flags(tmp_path):
     config = read_config(config_path)
     assert config["default"]["allow_git_url_install"] == "true"
     assert config["default"]["allow_pip_install"] == "true"
+    assert config["default"]["file_logging"] == "false"
 
 
 def test_preserves_existing_manager_settings_and_sections(tmp_path):
@@ -46,6 +47,7 @@ security_level = normal
 network_mode = public
 allow_git_url_install = False
 allow_pip_install = False
+file_logging = True
 
 [custom]
 keep_me = yes
@@ -60,6 +62,7 @@ keep_me = yes
     assert config["default"]["network_mode"] == "public"
     assert config["default"]["allow_git_url_install"] == "true"
     assert config["default"]["allow_pip_install"] == "true"
+    assert config["default"]["file_logging"] == "false"
     assert config["custom"]["keep_me"] == "yes"
 
 

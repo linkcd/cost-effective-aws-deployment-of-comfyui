@@ -80,10 +80,6 @@ class AsgConstruct(Construct):
             f"arn:{Aws.PARTITION}:ec2:{Aws.REGION}:"
             f"{Aws.ACCOUNT_ID}:volume/*"
         )
-        snapshot_resource = (
-            f"arn:{Aws.PARTITION}:ec2:{Aws.REGION}:"
-            f"{Aws.ACCOUNT_ID}:snapshot/*"
-        )
         instance_resource = (
             f"arn:{Aws.PARTITION}:ec2:{Aws.REGION}:"
             f"{Aws.ACCOUNT_ID}:instance/*"
@@ -115,13 +111,23 @@ class AsgConstruct(Construct):
         ))
         ec2_role.add_to_policy(iam.PolicyStatement(
             actions=["ec2:CreateVolume"],
-            resources=[volume_resource, snapshot_resource],
+            resources=[volume_resource],
             conditions={
                 "Bool": {
                     "ec2:Encrypted": "true",
                 },
                 "StringEquals": {
                     "aws:RequestedRegion": Aws.REGION,
+                    "ec2:VolumeType": "gp3",
+                },
+                "NumericEquals": {
+                    "ec2:VolumeSize": "5000",
+                },
+                # The persistent data volume must be newly created. Omitting
+                # snapshot permission and requiring this request key to be
+                # absent prevents REX-Ray from restoring arbitrary snapshots.
+                "Null": {
+                    "ec2:ParentSnapshot": "true",
                 },
             },
         ))

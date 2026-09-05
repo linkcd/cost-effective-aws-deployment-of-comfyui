@@ -67,6 +67,9 @@ class AdminConstruct(Construct):
             ))
 
         def grant_ssm_restart(function: lambda_.Function) -> None:
+            # SendCommand authorizes both the exact SSM document and target
+            # instance. AWS-RunShellScript is accountless, so scope it by its
+            # complete regional ARN; SSM has no DocumentName condition key.
             function.add_to_role_policy(iam.PolicyStatement(
                 actions=["ssm:SendCommand"],
                 resources=[

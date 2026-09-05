@@ -199,23 +199,48 @@ class ComfyUIStack(Stack):
         # Slack
 
         if slack_workspace_id and slack_channel_id:
+            slack_notification_policy = iam.ManagedPolicy(
+                self,
+                "SlackNotificationReadPolicy",
+                description=(
+                    "Read-only CloudWatch access used to render operational "
+                    "notifications in Slack."
+                ),
+                statements=[
+                    iam.PolicyStatement(
+                        actions=[
+                            "cloudwatch:DescribeAlarmHistory",
+                            "cloudwatch:DescribeAlarms",
+                            "cloudwatch:DescribeAlarmsForMetric",
+                            "cloudwatch:GetMetricData",
+                            "cloudwatch:GetMetricStatistics",
+                            "cloudwatch:GetMetricWidgetImage",
+                            "cloudwatch:ListMetrics",
+                        ],
+                        resources=["*"],
+                        conditions={
+                            "StringEquals": {
+                                "aws:RequestedRegion": self.region,
+                            },
+                        },
+                    ),
+                ],
+            )
             slack_channel = chatbot.SlackChannelConfiguration(
                 self, "SlackChannel",
                 slack_channel_configuration_name="TestChannel",
                 slack_workspace_id=slack_workspace_id,
                 slack_channel_id=slack_channel_id,
                 notification_topics=[
-                    asg_comfy.asg_events_topic, ecs_construct.ecs_health_topic]
+                    asg_comfy.asg_events_topic,
+                    ecs_construct.ecs_health_topic,
+                ],
+                # CDK otherwise defaults the channel guardrail to
+                # AdministratorAccess.
+                guardrail_policies=[slack_notification_policy],
             )
             slack_channel.role.add_managed_policy(
-                iam.ManagedPolicy.from_aws_managed_policy_name(
-                    "CloudWatchReadOnlyAccess"
-                )
-            )
-            slack_channel.role.add_managed_policy(
-                iam.ManagedPolicy.from_aws_managed_policy_name(
-                    "AmazonQFullAccess"
-                )
+                slack_notification_policy
             )
 
         # Output

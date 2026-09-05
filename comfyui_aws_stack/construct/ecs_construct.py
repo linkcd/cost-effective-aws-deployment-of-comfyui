@@ -121,6 +121,7 @@ class EcsConstruct(Construct):
         log_group = logs.LogGroup(
             self,
             f"{construct_id}LogGroup",
+            retention=logs.RetentionDays.ONE_DAY,
             removal_policy=RemovalPolicy.DESTROY,
         )
 
@@ -212,6 +213,7 @@ class EcsConstruct(Construct):
                 "COGNITO_USER_POOL_ID": user_pool.user_pool_id,
                 "COGNITO_CLIENT_ID": user_pool_client.user_pool_client_id,
                 "COMFYUI_S3_BUCKET": comfyui_bucket.bucket_name,
+                "COMFYUI_DISABLE_API_REQUEST_LOGGING": "1",
                 "COMFYUI_MODEL_CACHE_ENABLED": (
                     "1" if enable_nvme_model_cache else "0"
                 ),

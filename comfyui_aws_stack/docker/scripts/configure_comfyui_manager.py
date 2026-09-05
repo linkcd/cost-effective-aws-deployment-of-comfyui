@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Enable explicitly requested ComfyUI-Manager installation features."""
+"""Apply explicitly requested ComfyUI-Manager settings."""
 
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ from tempfile import NamedTemporaryFile
 INSTALL_FLAGS = {
     "allow_git_url_install": "true",
     "allow_pip_install": "true",
+    "file_logging": "false",
 }
 
 
