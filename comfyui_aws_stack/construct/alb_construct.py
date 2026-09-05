@@ -13,6 +13,8 @@ from aws_cdk import (
     aws_route53 as route53,
     aws_route53_targets as route53_targets,
     BundlingOptions,
+    Aws,
+    Stack,
 )
 from constructs import Construct
 from cdk_nag import NagSuppressions
@@ -131,14 +133,23 @@ class AlbConstruct(Construct):
                 runtime=lambda_.Runtime.PYTHON_3_10,
                 timeout=Duration.seconds(amount=120),
             )
-            cert_function.add_to_role_policy(
-                statement=iam.PolicyStatement(
-                    actions=["acm:ImportCertificate"], resources=["*"]
-                )
+            certificate_resource = (
+                f"arn:{Aws.PARTITION}:acm:{Aws.REGION}:"
+                f"{Aws.ACCOUNT_ID}:certificate/*"
             )
+            stack_id = Stack.of(self).stack_id
             cert_function.add_to_role_policy(
                 statement=iam.PolicyStatement(
-                    actions=["acm:AddTagsToCertificate"], resources=["*"]
+                    actions=[
+                        "acm:ImportCertificate",
+                        "acm:AddTagsToCertificate",
+                    ],
+                    resources=[certificate_resource],
+                    conditions={
+                        "StringEquals": {
+                            "aws:RequestTag/stack-id": stack_id,
+                        },
+                    },
                 )
             )
             provider = cr.Provider(
@@ -166,7 +177,12 @@ class AlbConstruct(Construct):
             cert_function.add_to_role_policy(
                 statement=iam.PolicyStatement(
                     actions=["acm:DeleteCertificate"],
-                    resources=["*"],
+                    resources=[certificate_resource],
+                    conditions={
+                        "StringEquals": {
+                            "aws:ResourceTag/stack-id": stack_id,
+                        },
+                    },
                 )
             )
             certificate = acm.Certificate.from_certificate_arn(

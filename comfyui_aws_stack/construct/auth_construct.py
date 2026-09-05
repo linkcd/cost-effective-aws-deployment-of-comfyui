@@ -152,7 +152,7 @@ class AuthConstruct(Construct):
                     "cognito-idp:DescribeUserPoolClient",
                     "cognito-idp:UpdateUserPoolClient",
                 ],
-                resources=["*"],
+                resources=[user_pool.user_pool_arn],
             )
         )
         post_process_provider = cr.Provider(

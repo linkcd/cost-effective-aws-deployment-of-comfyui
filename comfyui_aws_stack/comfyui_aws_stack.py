@@ -38,7 +38,7 @@ class ComfyUIStack(Stack):
                  # Sign up
                  self_sign_up_enabled: bool = False,
                  allowed_sign_up_email_domains: List[str] = None,
-                 mfa_required: bool = False,
+                 mfa_required: bool = True,
                  saml_auth_enabled: bool = False,
                  # Network Restriction
                  allowed_ip_v4_address_ranges: List[str] = None,

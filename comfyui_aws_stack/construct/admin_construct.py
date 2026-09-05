@@ -7,6 +7,7 @@ from aws_cdk import (
     aws_elasticloadbalancingv2_targets as targets,
     aws_events as events,
     aws_events_targets as event_targets,
+    Aws,
     Duration,
     aws_lambda as lambda_,
 )
@@ -35,29 +36,57 @@ class AdminConstruct(Construct):
             **kwargs) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
-        lambda_role = iam.Role(
-            scope, "LambdaExecutionRole",
-            assumed_by=iam.ServicePrincipal("lambda.amazonaws.com"),
-            managed_policies=[
-                iam.ManagedPolicy.from_aws_managed_policy_name(
-                    "service-role/AWSLambdaBasicExecutionRole"),
-                iam.ManagedPolicy.from_aws_managed_policy_name(
-                    "AutoScalingFullAccess"),
-            ]
-        )
-        lambda_role.add_to_policy(iam.PolicyStatement(
-            actions=["ecs:DescribeServices",
-                     "ecs:ListTasks",
-                     "ecs:ListServices",
-                     "elasticloadbalancing:ModifyListener",
-                     "elasticloadbalancing:ModifyRule",
-                     "elasticloadbalancing:DescribeRules",
-                     "elasticloadbalancing:DescribeListeners",
-                     "ecs:DescribeServices",
-                     "ecs:UpdateService",
-                     "ssm:SendCommand"],
-            resources=["*"]
-        ))
+        def grant_asg_describe(function: lambda_.Function) -> None:
+            # DescribeAutoScalingGroups has no resource-level ARN support.
+            function.add_to_role_policy(iam.PolicyStatement(
+                actions=["autoscaling:DescribeAutoScalingGroups"],
+                resources=["*"],
+                conditions={
+                    "StringEquals": {
+                        "aws:RequestedRegion": Aws.REGION,
+                    },
+                },
+            ))
+
+        def grant_asg_scale(function: lambda_.Function) -> None:
+            function.add_to_role_policy(iam.PolicyStatement(
+                actions=["autoscaling:SetDesiredCapacity"],
+                resources=[auto_scaling_group.auto_scaling_group_arn],
+            ))
+
+        def grant_ecs_describe(function: lambda_.Function) -> None:
+            function.add_to_role_policy(iam.PolicyStatement(
+                actions=["ecs:DescribeServices"],
+                resources=[service.service_arn],
+            ))
+
+        def grant_ecs_update(function: lambda_.Function) -> None:
+            function.add_to_role_policy(iam.PolicyStatement(
+                actions=["ecs:UpdateService"],
+                resources=[service.service_arn],
+            ))
+
+        def grant_ssm_restart(function: lambda_.Function) -> None:
+            function.add_to_role_policy(iam.PolicyStatement(
+                actions=["ssm:SendCommand"],
+                resources=[
+                    f"arn:{Aws.PARTITION}:ssm:{Aws.REGION}:"
+                    ":document/AWS-RunShellScript",
+                ],
+            ))
+            function.add_to_role_policy(iam.PolicyStatement(
+                actions=["ssm:SendCommand"],
+                resources=[
+                    f"arn:{Aws.PARTITION}:ec2:{Aws.REGION}:"
+                    f"{Aws.ACCOUNT_ID}:instance/*",
+                ],
+                conditions={
+                    "StringEquals": {
+                        "ssm:resourceTag/aws:autoscaling:groupName":
+                            auto_scaling_group.auto_scaling_group_name,
+                    },
+                },
+            ))
 
         admin_lambda = lambda_.Function(
             scope,
@@ -65,7 +94,6 @@ class AdminConstruct(Construct):
             handler="admin.handler",
             code=lambda_.Code.from_asset(
                 "./comfyui_aws_stack/lambda/admin_lambda"),
-            role=lambda_role,
             runtime=lambda_.Runtime.PYTHON_3_12,
             timeout=Duration.seconds(amount=60),
             environment={
@@ -74,6 +102,8 @@ class AdminConstruct(Construct):
                 "ECS_SERVICE_NAME": service.service_name
             }
         )
+        grant_asg_describe(admin_lambda)
+        grant_ecs_describe(admin_lambda)
 
         restart_docker_lambda = lambda_.Function(
             scope,
@@ -81,7 +111,6 @@ class AdminConstruct(Construct):
             handler="restart_docker.handler",
             code=lambda_.Code.from_asset(
                 "./comfyui_aws_stack/lambda/admin_lambda"),
-            role=lambda_role,
             runtime=lambda_.Runtime.PYTHON_3_12,
             timeout=Duration.seconds(amount=60),
             environment={
@@ -90,6 +119,9 @@ class AdminConstruct(Construct):
                 "ECS_SERVICE_NAME": service.service_name
             }
         )
+        grant_asg_describe(restart_docker_lambda)
+        grant_ecs_describe(restart_docker_lambda)
+        grant_ssm_restart(restart_docker_lambda)
 
         shutdown_lambda = lambda_.Function(
             scope,
@@ -97,7 +129,6 @@ class AdminConstruct(Construct):
             handler="shutdown.handler",
             code=lambda_.Code.from_asset(
                 "./comfyui_aws_stack/lambda/admin_lambda"),
-            role=lambda_role,
             runtime=lambda_.Runtime.PYTHON_3_12,
             timeout=Duration.seconds(amount=60),
             environment={
@@ -105,12 +136,13 @@ class AdminConstruct(Construct):
                 "ECS_CLUSTER_NAME": cluster.cluster_name,
             }
         )
+        grant_asg_describe(shutdown_lambda)
+        grant_asg_scale(shutdown_lambda)
 
         scaleup_trigger_lambda = lambda_.Function(
             scope,
             "ScaleUpTriggerFunction",
             runtime=lambda_.Runtime.PYTHON_3_12,
-            role=lambda_role,
             handler="scaleup_trigger.handler",
             code=lambda_.Code.from_asset(
                 "./comfyui_aws_stack/lambda/admin_lambda"),
@@ -121,12 +153,15 @@ class AdminConstruct(Construct):
                 "ECS_SERVICE_NAME": service.service_name
             }
         )
+        grant_asg_describe(scaleup_trigger_lambda)
+        grant_asg_scale(scaleup_trigger_lambda)
+        grant_ecs_describe(scaleup_trigger_lambda)
+        grant_ecs_update(scaleup_trigger_lambda)
 
         scalein_listener_lambda = lambda_.Function(
             scope,
             "ScaleinListenerFunction",
             runtime=lambda_.Runtime.PYTHON_3_12,
-            role=lambda_role,
             handler="scalein_listener.handler",
             code=lambda_.Code.from_asset(
                 "./comfyui_aws_stack/lambda/admin_lambda"),
@@ -137,12 +172,13 @@ class AdminConstruct(Construct):
                 "ECS_SERVICE_NAME": service.service_name
             }
         )
+        grant_asg_describe(scalein_listener_lambda)
+        grant_ecs_describe(scalein_listener_lambda)
 
         scaleup_listener_lambda = lambda_.Function(
             scope,
             "ScaleupListenerFunction",
             runtime=lambda_.Runtime.PYTHON_3_12,
-            role=lambda_role,
             handler="scaleup_listener.handler",
             code=lambda_.Code.from_asset(
                 "./comfyui_aws_stack/lambda/admin_lambda"),
@@ -153,12 +189,13 @@ class AdminConstruct(Construct):
                 "ECS_SERVICE_NAME": service.service_name
             }
         )
+        grant_asg_describe(scaleup_listener_lambda)
+        grant_ecs_describe(scaleup_listener_lambda)
 
         signout_lambda = lambda_.Function(
             scope,
             "SignoutFunction",
             runtime=lambda_.Runtime.PYTHON_3_12,
-            role=lambda_role,
             handler="signout.handler",
             code=lambda_.Code.from_asset(
                 "./comfyui_aws_stack/lambda/admin_lambda"),
@@ -258,3 +295,13 @@ class AdminConstruct(Construct):
             "LISTENER_RULE_ARN", lambda_admin_rule.listener_rule_arn)
         self.scaleup_listener_lambda.add_environment(
             "LISTENER_RULE_ARN", lambda_admin_rule.listener_rule_arn)
+
+        for function in [
+            self.restart_docker_lambda,
+            self.scalein_listener_lambda,
+            self.scaleup_listener_lambda,
+        ]:
+            function.add_to_role_policy(iam.PolicyStatement(
+                actions=["elasticloadbalancing:ModifyRule"],
+                resources=[lambda_admin_rule.listener_rule_arn],
+            ))

@@ -35,7 +35,8 @@ NagSuppressions.add_stack_suppressions(stack=comfy_ui_stack, suppressions=[
         "reason": "Some rules require '*' wildcard as an example ACM operations, and other are sufficient for sample"},
     {"id": "AwsSolutions-COG8",
         "reason": "Cognito plus tier/feature plan not required for this sample deployment"},
-    {"id": "CdkNagValidationFailure", "reason": "Suppressions for cdk nag"},
+    {"id": "CdkNagValidationFailure",
+        "reason": "CDK Nag cannot resolve some tokenized policies during synthesis; concrete IAM scopes are verified in synthesized-template tests"},
 ])
 
 app.synth()

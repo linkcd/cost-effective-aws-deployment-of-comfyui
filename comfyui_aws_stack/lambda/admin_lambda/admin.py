@@ -5,6 +5,7 @@ def handler(event, context):
     asg_names = [os.environ['ASG_NAME']]
     asg_names = [name for name in asg_names if name]  # Filter out None
     ecs_cluster_name = os.environ.get("ECS_CLUSTER_NAME")
+    ecs_service_name = os.environ.get("ECS_SERVICE_NAME")
 
     # Clients
     asg_client = boto3.client('autoscaling')
@@ -23,23 +24,16 @@ def handler(event, context):
             desired_capacity += group['DesiredCapacity']
             instances.extend(group['Instances'])
 
-        # Get all ECS service ARNs in the cluster
-        paginator = ecs_client.get_paginator('list_services')
-        service_arns = []
-        for page in paginator.paginate(cluster=ecs_cluster_name):
-            service_arns.extend(page['serviceArns'])
-
-        # Describe all services (batch up to 10 at a time)
         all_services = []
-        for i in range(0, len(service_arns), 10):
+        if ecs_cluster_name and ecs_service_name:
             response = ecs_client.describe_services(
                 cluster=ecs_cluster_name,
-                services=service_arns[i:i + 10]
+                services=[ecs_service_name]
             )
-            all_services.extend(response['services'])
+            all_services = response.get('services', [])
 
         # Check ECS service states
-        all_services_healthy = all(
+        all_services_healthy = bool(all_services) and all(
             s['desiredCount'] > 0 and s['runningCount'] >= s['desiredCount']
             for s in all_services
         )

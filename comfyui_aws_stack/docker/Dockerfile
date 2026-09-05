@@ -85,4 +85,7 @@ COPY --chown=user:user scripts/start_comfyui.sh /home/user/bin/start_comfyui.sh
 RUN python /home/user/bin/patch_comfyui_frontend_generated_assets.py
 RUN chmod +x /home/user/bin/start_comfyui.sh /home/user/bin/sync_model_cache.py
 
+HEALTHCHECK --interval=30s --timeout=10s --start-period=15m --retries=3 \
+    CMD curl --fail --silent --show-error http://localhost:8181/system_stats || exit 1
+
 ENTRYPOINT ["/home/user/bin/start_comfyui.sh"]

@@ -9,12 +9,12 @@
 #   1. Make changes locally
 #   2. Run: ./scripts/run_codebuild.sh deploy
 #      → Zips source, uploads to S3, kicks off CodeBuild
-#      → CodeBuild does: synth → verify → bootstrap → deploy
+#      → CodeBuild does: synth → verify → deploy
 #   3. Watch in console or: ./scripts/run_codebuild.sh status
 #   4. When done testing: ./scripts/run_codebuild.sh destroy
 #
 # Commands:
-#   setup    - One-time: create CodeBuild infrastructure (no Docker needed)
+#   setup    - One-time: bootstrap CDK and create CodeBuild infrastructure
 #   deploy   - Zip, upload, and start a full deploy build
 #   synth    - Zip, upload, and start a synth-only build (no deploy)
 #   status   - Check latest build status
@@ -60,6 +60,20 @@ upload_source() {
 
 case "${1:-deploy}" in
   setup)
+    CDK_CLI="$PROJECT_DIR/node_modules/.bin/cdk"
+    if [ ! -x "$CDK_CLI" ]; then
+      echo "Error: AWS CDK CLI is not installed."
+      echo "Run 'npm install' or use 'make setup' first."
+      exit 1
+    fi
+    ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+    echo "Bootstrapping CDK deployment roles..."
+    (
+      cd "$PROJECT_DIR"
+      CDK_DEFAULT_ACCOUNT="$ACCOUNT_ID" \
+        CDK_DEFAULT_REGION="$REGION" \
+        "$CDK_CLI" bootstrap "aws://${ACCOUNT_ID}/${REGION}"
+    )
     echo "Creating CodeBuild infrastructure..."
     aws cloudformation deploy \
       --stack-name "$CODEBUILD_STACK_NAME" \
@@ -166,7 +180,7 @@ case "${1:-deploy}" in
   *)
     echo "Usage: $0 [setup|deploy|synth|status|logs|destroy|cleanup]"
     echo ""
-    echo "  setup    - One-time: create CodeBuild infrastructure"
+    echo "  setup    - One-time: bootstrap CDK + create CodeBuild infrastructure"
     echo "  deploy   - Zip source + start full deploy (synth → deploy)"
     echo "  synth    - Zip source + synth-only verification"
     echo "  status   - Check latest build"

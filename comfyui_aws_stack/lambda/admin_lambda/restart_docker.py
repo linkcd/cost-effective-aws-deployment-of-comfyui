@@ -15,6 +15,7 @@ def send_docker_restart_command(instance_id):
 def handler(event, context):
     asg_name = os.environ.get("ASG_NAME")
     cluster_name = os.environ.get("ECS_CLUSTER_NAME")
+    service_name = os.environ.get("ECS_SERVICE_NAME")
     listener_rule_arn = os.environ.get("LISTENER_RULE_ARN")
 
     ecs_client = boto3.client('ecs')
@@ -36,22 +37,17 @@ def handler(event, context):
             if not instance_id:
                 raise ValueError("Instance ID not found.")
 
-            # Describe ECS services
-            paginator = ecs_client.get_paginator('list_services')
-            service_arns = []
-            for page in paginator.paginate(cluster=cluster_name):
-                service_arns.extend(page['serviceArns'])
+            if not cluster_name or not service_name:
+                raise ValueError("ECS service configuration is missing.")
 
-            all_services = []
-            for i in range(0, len(service_arns), 10):
-                resp = ecs_client.describe_services(
-                    cluster=cluster_name,
-                    services=service_arns[i:i + 10]
-                )
-                all_services.extend(resp['services'])
+            response = ecs_client.describe_services(
+                cluster=cluster_name,
+                services=[service_name]
+            )
+            all_services = response.get('services', [])
 
             # Confirm all services are healthy
-            all_services_healthy = all(
+            all_services_healthy = bool(all_services) and all(
                 s['desiredCount'] > 0 and s['runningCount'] >= s['desiredCount']
                 for s in all_services
             )

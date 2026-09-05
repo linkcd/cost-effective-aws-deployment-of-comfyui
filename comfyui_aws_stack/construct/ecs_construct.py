@@ -12,6 +12,7 @@ from aws_cdk import (
     aws_sns as sns,
     aws_cloudwatch as cloudwatch,
     aws_cloudwatch_actions as cloudwatch_actions,
+    Aws,
     Duration,
     RemovalPolicy,
 )
@@ -72,30 +73,49 @@ class EcsConstruct(Construct):
             auto_delete_objects=False,
         )
 
-        # === IAM Role for Task Execution ===
+        # The execution role is used by the ECS agent to pull images and write
+        # logs. Application AWS API calls use the separate task role below.
         task_exec_role = iam.Role(
             self,
             f"{construct_id}ECSTaskExecutionRole",
             assumed_by=iam.ServicePrincipal("ecs-tasks.amazonaws.com"),
-            managed_policies=[
-                iam.ManagedPolicy.from_aws_managed_policy_name(
-                    "service-role/AmazonECSTaskExecutionRolePolicy"
-                ),
-            ],
+        )
+
+        task_role = iam.Role(
+            self,
+            f"{construct_id}ECSTaskRole",
+            assumed_by=iam.ServicePrincipal("ecs-tasks.amazonaws.com"),
         )
 
         # Bedrock access for ComfyUI custom nodes
-        task_exec_role.add_to_policy(iam.PolicyStatement(
+        task_role.add_to_policy(iam.PolicyStatement(
             actions=[
                 "bedrock:InvokeModel",
                 "bedrock:InvokeModelWithResponseStream",
-                "bedrock:ListFoundationModels",
             ],
-            resources=["*"]
+            resources=[
+                f"arn:{Aws.PARTITION}:bedrock:{Aws.REGION}::foundation-model/*",
+                f"arn:{Aws.PARTITION}:bedrock:{Aws.REGION}:{Aws.ACCOUNT_ID}:custom-model/*",
+                f"arn:{Aws.PARTITION}:bedrock:{Aws.REGION}:{Aws.ACCOUNT_ID}:imported-model/*",
+                f"arn:{Aws.PARTITION}:bedrock:{Aws.REGION}:{Aws.ACCOUNT_ID}:provisioned-model/*",
+                f"arn:{Aws.PARTITION}:bedrock:{Aws.REGION}:{Aws.ACCOUNT_ID}:inference-profile/*",
+                f"arn:{Aws.PARTITION}:bedrock:{Aws.REGION}:{Aws.ACCOUNT_ID}:application-inference-profile/*",
+                f"arn:{Aws.PARTITION}:bedrock:{Aws.REGION}:{Aws.ACCOUNT_ID}:prompt-router/*",
+            ],
+        ))
+        # ListFoundationModels does not support resource-level permissions.
+        task_role.add_to_policy(iam.PolicyStatement(
+            actions=["bedrock:ListFoundationModels"],
+            resources=["*"],
+            conditions={
+                "StringEquals": {
+                    "aws:RequestedRegion": Aws.REGION,
+                },
+            },
         ))
 
         # S3 access for file storage
-        comfyui_bucket.grant_read_write(task_exec_role)
+        comfyui_bucket.grant_read_write(task_role)
 
         # === Log Group ===
         log_group = logs.LogGroup(
@@ -131,7 +151,8 @@ class EcsConstruct(Construct):
                 driver="public.ecr.aws/j1l5j1d1/rexray-ebs",
                 driver_opts={
                     "volumetype": "gp3",
-                    "size": "5000"  # Size in GiB
+                    "size": "5000",  # Size in GiB
+                    "encrypted": "true",
                 },
                 autoprovision=True
             )
@@ -151,7 +172,7 @@ class EcsConstruct(Construct):
             self,
             f"{construct_id}ComfyTaskDef",
             network_mode=ecs.NetworkMode.AWS_VPC,
-            task_role=task_exec_role,
+            task_role=task_role,
             execution_role=task_exec_role,
             volumes=task_volumes,
         )

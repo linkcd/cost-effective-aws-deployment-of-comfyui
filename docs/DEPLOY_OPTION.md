@@ -32,16 +32,16 @@ comfy_ui_stack = ComfyUIStack(
 
 ### Enable MFA
 
-You may force user to use MFA.
+MFA is required for Cognito users by default.
 
-Set `mfa_required` to `True` in the context. (The default is `False`)
+To opt out, set `mfa_required` to `False` in the context.
 
 **Edit [app.py](/app.py)**
 ```python
 comfy_ui_stack = ComfyUIStack(
     ...
     # Override Parameters
-    mfa_required=True,
+    mfa_required=False,
     ...
 )
 ```

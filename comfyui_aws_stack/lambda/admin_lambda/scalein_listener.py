@@ -4,7 +4,12 @@ import os
 
 def handler(event, context):
     # Check required environment variables early
-    required_env_vars = ['ASG_NAME', 'ECS_CLUSTER_NAME', 'LISTENER_RULE_ARN']
+    required_env_vars = [
+        'ASG_NAME',
+        'ECS_CLUSTER_NAME',
+        'ECS_SERVICE_NAME',
+        'LISTENER_RULE_ARN',
+    ]
     missing_vars = [var for var in required_env_vars if not os.environ.get(var)]
     if missing_vars:
         return {
@@ -14,6 +19,7 @@ def handler(event, context):
 
     asg_name = os.environ['ASG_NAME']
     cluster_name = os.environ['ECS_CLUSTER_NAME']
+    service_name = os.environ['ECS_SERVICE_NAME']
     listener_rule_arn = os.environ['LISTENER_RULE_ARN']
 
     asg_client = boto3.client('autoscaling')
@@ -34,55 +40,28 @@ def handler(event, context):
         asg_group = asg_response['AutoScalingGroups'][0]
         desired_capacity = asg_group['DesiredCapacity']
 
-        # Get all ECS service ARNs in the cluster
-        paginator = ecs_client.get_paginator('list_services')
-        service_arns = []
-        for page in paginator.paginate(cluster=cluster_name):
-            service_arns.extend(page['serviceArns'])
-
-        # Describe ECS services in batches of 10
-        all_services = []
-        for i in range(0, len(service_arns), 10):
-            response = ecs_client.describe_services(
-                cluster=cluster_name,
-                services=service_arns[i:i + 10]
-            )
-            all_services.extend(response['services'])
+        response = ecs_client.describe_services(
+            cluster=cluster_name,
+            services=[service_name]
+        )
+        all_services = response.get('services', [])
 
         # Check if all ECS services are stopped (runningCount == 0)
-        all_services_down = all(s['runningCount'] == 0 for s in all_services)
+        all_services_down = bool(all_services) and all(
+            s['runningCount'] == 0 for s in all_services
+        )
 
         if desired_capacity == 0 and all_services_down:
-            # Describe existing rule to get current conditions and actions
-            rule_response = elbv2_client.describe_rules(RuleArns=[listener_rule_arn])
-            if not rule_response['Rules']:
-                return {
-                    'statusCode': 404,
-                    'body': json.dumps(f"Listener rule '{listener_rule_arn}' not found")
-                }
-            rule = rule_response['Rules'][0]
-
-            conditions = rule.get('Conditions', [])
-            actions = rule.get('Actions', [])
-
-            # Modify path-pattern condition or add it if not present
-            path_condition_found = False
-            for cond in conditions:
-                if cond.get('Field') == 'path-pattern':
-                    cond['Values'] = ['/', '/admin']
-                    path_condition_found = True
-                    break
-            if not path_condition_found:
-                conditions.append({
-                    'Field': 'path-pattern',
-                    'Values': ['/', '/admin']
-                })
-
-            # Modify the listener rule with updated conditions
+            # Modify only the path condition; omitting Actions preserves the
+            # existing Cognito authentication and Lambda forwarding actions.
             elbv2_client.modify_rule(
                 RuleArn=listener_rule_arn,
-                Conditions=conditions,
-                Actions=actions
+                Conditions=[
+                    {
+                        'Field': 'path-pattern',
+                        'Values': ['/', '/admin']
+                    }
+                ]
             )
             print(f"Listener rule '{listener_rule_arn}' updated successfully because ASG '{asg_name}' is at desired capacity 0 and all ECS services are down.")
         else:

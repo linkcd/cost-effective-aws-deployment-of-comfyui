@@ -18,8 +18,6 @@ phases:
       - echo "=== VERIFY AL2023 IN TEMPLATE ==="
       - grep "amazon-linux-2023" cdk.out/ComfyUIStack.template.json && echo "PASS - AL2023 literal found" || echo "INFO - AL2023 may be resolved at deploy time via SSM token"
       - grep -i "optimized-ami\|EcsOptimized\|amazon-linux" cdk.out/ComfyUIStack.template.json | head -5 || true
-      - echo "=== CDK BOOTSTRAP ==="
-      - source .venv/bin/activate && npx cdk bootstrap
       - echo "=== CDK DEPLOY ==="
       - source .venv/bin/activate && npx cdk deploy --require-approval never
 

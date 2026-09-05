@@ -95,13 +95,13 @@
       }),
       'AdminFunction09BA95C5': dict({
         'DependsOn': list([
-          'LambdaExecutionRoleDefaultPolicy6D69732F',
-          'LambdaExecutionRoleD5C26073',
+          'AdminFunctionServiceRoleDefaultPolicyB69DB622',
+          'AdminFunctionServiceRoleE19718A7',
         ]),
         'Properties': dict({
           'Code': dict({
             'S3Bucket': 'cdk-hnb659fds-assets-123456789012-us-east-1',
-            'S3Key': '25eaca20d5feab25be1f3c1d4add4c2b04280aed06976811040aa9a98a82ba0d.zip',
+            'S3Key': '3c59eada85efca1709fc61a5ec8886739d4d5b2c2d6514c30f9485e4fab4d996.zip',
           }),
           'Environment': dict({
             'Variables': dict({
@@ -122,7 +122,7 @@
           'Handler': 'admin.handler',
           'Role': dict({
             'Fn::GetAtt': list([
-              'LambdaExecutionRoleD5C26073',
+              'AdminFunctionServiceRoleE19718A7',
               'Arn',
             ]),
           }),
@@ -143,6 +143,72 @@
           'Principal': 'elasticloadbalancing.amazonaws.com',
         }),
         'Type': 'AWS::Lambda::Permission',
+      }),
+      'AdminFunctionServiceRoleDefaultPolicyB69DB622': dict({
+        'Properties': dict({
+          'PolicyDocument': dict({
+            'Statement': list([
+              dict({
+                'Action': 'autoscaling:DescribeAutoScalingGroups',
+                'Condition': dict({
+                  'StringEquals': dict({
+                    'aws:RequestedRegion': dict({
+                      'Ref': 'AWS::Region',
+                    }),
+                  }),
+                }),
+                'Effect': 'Allow',
+                'Resource': '*',
+              }),
+              dict({
+                'Action': 'ecs:DescribeServices',
+                'Effect': 'Allow',
+                'Resource': dict({
+                  'Ref': 'EcsConstructEcsConstructComfyUIService0E4FAFD1',
+                }),
+              }),
+            ]),
+            'Version': '2012-10-17',
+          }),
+          'PolicyName': 'AdminFunctionServiceRoleDefaultPolicyB69DB622',
+          'Roles': list([
+            dict({
+              'Ref': 'AdminFunctionServiceRoleE19718A7',
+            }),
+          ]),
+        }),
+        'Type': 'AWS::IAM::Policy',
+      }),
+      'AdminFunctionServiceRoleE19718A7': dict({
+        'Properties': dict({
+          'AssumeRolePolicyDocument': dict({
+            'Statement': list([
+              dict({
+                'Action': 'sts:AssumeRole',
+                'Effect': 'Allow',
+                'Principal': dict({
+                  'Service': 'lambda.amazonaws.com',
+                }),
+              }),
+            ]),
+            'Version': '2012-10-17',
+          }),
+          'ManagedPolicyArns': list([
+            dict({
+              'Fn::Join': list([
+                '',
+                list([
+                  'arn:',
+                  dict({
+                    'Ref': 'AWS::Partition',
+                  }),
+                  ':iam::aws:policy/service-role/AWSLambdaBasicExecutionRole',
+                ]),
+              ]),
+            }),
+          ]),
+        }),
+        'Type': 'AWS::IAM::Role',
       }),
       'ComfyUIALB1DAC5A97': dict({
         'DependsOn': list([
@@ -404,6 +470,13 @@
             }),
           }),
           'NewInstancesProtectedFromScaleIn': False,
+          'Tags': list([
+            dict({
+              'Key': 'comfyui:ebs-host',
+              'PropagateAtLaunch': True,
+              'Value': 'true',
+            }),
+          ]),
           'VPCZoneIdentifier': list([
             dict({
               'Ref': 'CustomVPCPrivateSubnet1SubnetBC3416DA',
@@ -480,7 +553,7 @@
                 lifecycle_event = json.loads(event['Records'][0]['Sns']['Message'])
                 instance_id = lifecycle_event.get('EC2InstanceId')
                 if not instance_id:
-                  print('Got event without EC2InstanceId: %s', json.dumps(dict(event, ResponseURL='...')))
+                  print(f"Got event without EC2InstanceId: { json.dumps(dict(event, ResponseURL='...')) }")
                   return
               
                 instance_arn = container_instance_arn(cluster, instance_id)
@@ -574,7 +647,13 @@
               'Arn',
             ]),
           }),
-          'Runtime': 'python3.9',
+          'Runtime': 'python3.13',
+          'Tags': list([
+            dict({
+              'Key': 'comfyui:ebs-host',
+              'Value': 'true',
+            }),
+          ]),
           'Timeout': 310,
         }),
         'Type': 'AWS::Lambda::Function',
@@ -665,6 +744,12 @@
                   ':iam::aws:policy/service-role/AWSLambdaBasicExecutionRole',
                 ]),
               ]),
+            }),
+          ]),
+          'Tags': list([
+            dict({
+              'Key': 'comfyui:ebs-host',
+              'Value': 'true',
             }),
           ]),
         }),
@@ -906,6 +991,12 @@
             ]),
             'Version': '2012-10-17',
           }),
+          'Tags': list([
+            dict({
+              'Key': 'comfyui:ebs-host',
+              'Value': 'true',
+            }),
+          ]),
         }),
         'Type': 'AWS::IAM::Role',
       }),
@@ -976,6 +1067,14 @@
               }),
             ]),
           }),
+        }),
+        'Properties': dict({
+          'Tags': list([
+            dict({
+              'Key': 'comfyui:ebs-host',
+              'Value': 'true',
+            }),
+          ]),
         }),
         'Type': 'AWS::SNS::Topic',
       }),
@@ -1109,12 +1208,7 @@
                     dict({
                       'Ref': 'EcsCluster97242B84',
                     }),
-                    '''
-                       >> /etc/ecs/ecs.config
-                      sudo iptables --insert FORWARD 1 --in-interface docker+ --destination 169.254.169.254/32 --jump DROP
-                      sudo service iptables save
-                      echo ECS_AWSVPC_BLOCK_IMDS=true >> /etc/ecs/ecs.config
-                    ''',
+                    ' >> /etc/ecs/ecs.config',
                   ]),
                 ]),
               }),
@@ -1167,18 +1261,6 @@
                   dict({
                     'Ref': 'AWS::Partition',
                   }),
-                  ':iam::aws:policy/AmazonEC2FullAccess',
-                ]),
-              ]),
-            }),
-            dict({
-              'Fn::Join': list([
-                '',
-                list([
-                  'arn:',
-                  dict({
-                    'Ref': 'AWS::Partition',
-                  }),
                   ':iam::aws:policy/AmazonSSMManagedInstanceCore',
                 ]),
               ]),
@@ -1193,21 +1275,191 @@
             'Statement': list([
               dict({
                 'Action': list([
-                  'ecs:RegisterContainerInstance',
-                  'ecs:DeregisterContainerInstance',
-                  'ecs:DiscoverPollEndpoint',
-                  'ecs:Submit*',
-                  'ecs:Poll',
-                  'ecs:StartTelemetrySession',
-                  'ecr:GetAuthorizationToken',
-                  'ecr:BatchCheckLayerAvailability',
-                  'ecr:GetDownloadUrlForLayer',
-                  'ecr:BatchGetImage',
-                  'logs:CreateLogStream',
-                  'logs:PutLogEvents',
+                  'ec2:DescribeAvailabilityZones',
+                  'ec2:DescribeInstances',
+                  'ec2:DescribeSnapshots',
+                  'ec2:DescribeTags',
+                  'ec2:DescribeVolumes',
+                  'ec2:DescribeVolumesModifications',
+                  'ec2:DescribeVolumeStatus',
                 ]),
+                'Condition': dict({
+                  'StringEquals': dict({
+                    'aws:RequestedRegion': dict({
+                      'Ref': 'AWS::Region',
+                    }),
+                  }),
+                }),
                 'Effect': 'Allow',
                 'Resource': '*',
+              }),
+              dict({
+                'Action': 'ec2:DescribeVolumeAttribute',
+                'Effect': 'Allow',
+                'Resource': dict({
+                  'Fn::Join': list([
+                    '',
+                    list([
+                      'arn:',
+                      dict({
+                        'Ref': 'AWS::Partition',
+                      }),
+                      ':ec2:',
+                      dict({
+                        'Ref': 'AWS::Region',
+                      }),
+                      ':',
+                      dict({
+                        'Ref': 'AWS::AccountId',
+                      }),
+                      ':volume/*',
+                    ]),
+                  ]),
+                }),
+              }),
+              dict({
+                'Action': 'ec2:CreateVolume',
+                'Condition': dict({
+                  'Bool': dict({
+                    'ec2:Encrypted': 'true',
+                  }),
+                  'StringEquals': dict({
+                    'aws:RequestedRegion': dict({
+                      'Ref': 'AWS::Region',
+                    }),
+                  }),
+                }),
+                'Effect': 'Allow',
+                'Resource': list([
+                  dict({
+                    'Fn::Join': list([
+                      '',
+                      list([
+                        'arn:',
+                        dict({
+                          'Ref': 'AWS::Partition',
+                        }),
+                        ':ec2:',
+                        dict({
+                          'Ref': 'AWS::Region',
+                        }),
+                        ':',
+                        dict({
+                          'Ref': 'AWS::AccountId',
+                        }),
+                        ':volume/*',
+                      ]),
+                    ]),
+                  }),
+                  dict({
+                    'Fn::Join': list([
+                      '',
+                      list([
+                        'arn:',
+                        dict({
+                          'Ref': 'AWS::Partition',
+                        }),
+                        ':ec2:',
+                        dict({
+                          'Ref': 'AWS::Region',
+                        }),
+                        ':',
+                        dict({
+                          'Ref': 'AWS::AccountId',
+                        }),
+                        ':snapshot/*',
+                      ]),
+                    ]),
+                  }),
+                ]),
+              }),
+              dict({
+                'Action': list([
+                  'ec2:CreateTags',
+                  'ec2:DeleteTags',
+                  'ec2:DeleteVolume',
+                  'ec2:ModifyVolume',
+                ]),
+                'Effect': 'Allow',
+                'Resource': dict({
+                  'Fn::Join': list([
+                    '',
+                    list([
+                      'arn:',
+                      dict({
+                        'Ref': 'AWS::Partition',
+                      }),
+                      ':ec2:',
+                      dict({
+                        'Ref': 'AWS::Region',
+                      }),
+                      ':',
+                      dict({
+                        'Ref': 'AWS::AccountId',
+                      }),
+                      ':volume/*',
+                    ]),
+                  ]),
+                }),
+              }),
+              dict({
+                'Action': list([
+                  'ec2:AttachVolume',
+                  'ec2:DetachVolume',
+                ]),
+                'Effect': 'Allow',
+                'Resource': dict({
+                  'Fn::Join': list([
+                    '',
+                    list([
+                      'arn:',
+                      dict({
+                        'Ref': 'AWS::Partition',
+                      }),
+                      ':ec2:',
+                      dict({
+                        'Ref': 'AWS::Region',
+                      }),
+                      ':',
+                      dict({
+                        'Ref': 'AWS::AccountId',
+                      }),
+                      ':volume/*',
+                    ]),
+                  ]),
+                }),
+              }),
+              dict({
+                'Action': list([
+                  'ec2:AttachVolume',
+                  'ec2:DetachVolume',
+                ]),
+                'Condition': dict({
+                  'StringEquals': dict({
+                    'ec2:ResourceTag/comfyui:ebs-host': 'true',
+                  }),
+                }),
+                'Effect': 'Allow',
+                'Resource': dict({
+                  'Fn::Join': list([
+                    '',
+                    list([
+                      'arn:',
+                      dict({
+                        'Ref': 'AWS::Partition',
+                      }),
+                      ':ec2:',
+                      dict({
+                        'Ref': 'AWS::Region',
+                      }),
+                      ':',
+                      dict({
+                        'Ref': 'AWS::AccountId',
+                      }),
+                      ':instance/*',
+                    ]),
+                  ]),
+                }),
               }),
               dict({
                 'Action': list([
@@ -1341,7 +1593,7 @@
             'SMS_MFA',
             'SOFTWARE_TOKEN_MFA',
           ]),
-          'MfaConfiguration': 'OPTIONAL',
+          'MfaConfiguration': 'ON',
           'Policies': dict({
             'PasswordPolicy': dict({
               'MinimumLength': 12,
@@ -3021,7 +3273,7 @@
                     dict({
                       'Ref': 'AWS::URLSuffix',
                     }),
-                    '/cdk-hnb659fds-container-assets-123456789012-us-east-1:7daf730e742cf25b137b6d732ba741639174744edda3b7ca21a8f23c7cf08166',
+                    '/cdk-hnb659fds-container-assets-123456789012-us-east-1:c5e5ada1c45fbe34184b6d618b3bd488329fbaf9d138decb56cdae3619c9f4cd',
                   ]),
                 ]),
               }),
@@ -3093,7 +3345,7 @@
           ]),
           'TaskRoleArn': dict({
             'Fn::GetAtt': list([
-              'EcsConstructEcsConstructECSTaskExecutionRoleA02B0E4B',
+              'EcsConstructEcsConstructECSTaskRole42414901',
               'Arn',
             ]),
           }),
@@ -3103,6 +3355,7 @@
                 'Autoprovision': True,
                 'Driver': 'public.ecr.aws/j1l5j1d1/rexray-ebs',
                 'DriverOpts': dict({
+                  'encrypted': 'true',
                   'size': '5000',
                   'volumetype': 'gp3',
                 }),
@@ -3213,8 +3466,8 @@
         'DependsOn': list([
           'ComfyUIALBListenerAuthenticateRuleRule8586BA87',
           'ComfyUIALBListener13444DC1',
-          'EcsConstructEcsConstructECSTaskExecutionRoleDefaultPolicyE63D13ED',
-          'EcsConstructEcsConstructECSTaskExecutionRoleA02B0E4B',
+          'EcsConstructEcsConstructECSTaskRoleDefaultPolicy8B0CDB3A',
+          'EcsConstructEcsConstructECSTaskRole42414901',
         ]),
         'Properties': dict({
           'CapacityProviderStrategy': list([
@@ -3297,8 +3550,8 @@
       }),
       'EcsConstructEcsConstructComfyUIServiceCloudmapService3DC6CE42': dict({
         'DependsOn': list([
-          'EcsConstructEcsConstructECSTaskExecutionRoleDefaultPolicyE63D13ED',
-          'EcsConstructEcsConstructECSTaskExecutionRoleA02B0E4B',
+          'EcsConstructEcsConstructECSTaskRoleDefaultPolicy8B0CDB3A',
+          'EcsConstructEcsConstructECSTaskRole42414901',
         ]),
         'Properties': dict({
           'DnsConfig': dict({
@@ -3343,20 +3596,6 @@
             ]),
             'Version': '2012-10-17',
           }),
-          'ManagedPolicyArns': list([
-            dict({
-              'Fn::Join': list([
-                '',
-                list([
-                  'arn:',
-                  dict({
-                    'Ref': 'AWS::Partition',
-                  }),
-                  ':iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy',
-                ]),
-              ]),
-            }),
-          ]),
         }),
         'Type': 'AWS::IAM::Role',
       }),
@@ -3364,52 +3603,6 @@
         'Properties': dict({
           'PolicyDocument': dict({
             'Statement': list([
-              dict({
-                'Action': list([
-                  'bedrock:InvokeModel',
-                  'bedrock:InvokeModelWithResponseStream',
-                  'bedrock:ListFoundationModels',
-                ]),
-                'Effect': 'Allow',
-                'Resource': '*',
-              }),
-              dict({
-                'Action': list([
-                  's3:GetObject*',
-                  's3:GetBucket*',
-                  's3:List*',
-                  's3:DeleteObject*',
-                  's3:PutObject',
-                  's3:PutObjectLegalHold',
-                  's3:PutObjectRetention',
-                  's3:PutObjectTagging',
-                  's3:PutObjectVersionTagging',
-                  's3:Abort*',
-                ]),
-                'Effect': 'Allow',
-                'Resource': list([
-                  dict({
-                    'Fn::GetAtt': list([
-                      'EcsConstructEcsConstructComfyUIBucketAE7FB2B1',
-                      'Arn',
-                    ]),
-                  }),
-                  dict({
-                    'Fn::Join': list([
-                      '',
-                      list([
-                        dict({
-                          'Fn::GetAtt': list([
-                            'EcsConstructEcsConstructComfyUIBucketAE7FB2B1',
-                            'Arn',
-                          ]),
-                        }),
-                        '/*',
-                      ]),
-                    ]),
-                  }),
-                ]),
-              }),
               dict({
                 'Action': list([
                   'ecr:BatchCheckLayerAvailability',
@@ -3455,6 +3648,233 @@
           'Roles': list([
             dict({
               'Ref': 'EcsConstructEcsConstructECSTaskExecutionRoleA02B0E4B',
+            }),
+          ]),
+        }),
+        'Type': 'AWS::IAM::Policy',
+      }),
+      'EcsConstructEcsConstructECSTaskRole42414901': dict({
+        'Properties': dict({
+          'AssumeRolePolicyDocument': dict({
+            'Statement': list([
+              dict({
+                'Action': 'sts:AssumeRole',
+                'Effect': 'Allow',
+                'Principal': dict({
+                  'Service': 'ecs-tasks.amazonaws.com',
+                }),
+              }),
+            ]),
+            'Version': '2012-10-17',
+          }),
+        }),
+        'Type': 'AWS::IAM::Role',
+      }),
+      'EcsConstructEcsConstructECSTaskRoleDefaultPolicy8B0CDB3A': dict({
+        'Properties': dict({
+          'PolicyDocument': dict({
+            'Statement': list([
+              dict({
+                'Action': list([
+                  'bedrock:InvokeModel',
+                  'bedrock:InvokeModelWithResponseStream',
+                ]),
+                'Effect': 'Allow',
+                'Resource': list([
+                  dict({
+                    'Fn::Join': list([
+                      '',
+                      list([
+                        'arn:',
+                        dict({
+                          'Ref': 'AWS::Partition',
+                        }),
+                        ':bedrock:',
+                        dict({
+                          'Ref': 'AWS::Region',
+                        }),
+                        '::foundation-model/*',
+                      ]),
+                    ]),
+                  }),
+                  dict({
+                    'Fn::Join': list([
+                      '',
+                      list([
+                        'arn:',
+                        dict({
+                          'Ref': 'AWS::Partition',
+                        }),
+                        ':bedrock:',
+                        dict({
+                          'Ref': 'AWS::Region',
+                        }),
+                        ':',
+                        dict({
+                          'Ref': 'AWS::AccountId',
+                        }),
+                        ':custom-model/*',
+                      ]),
+                    ]),
+                  }),
+                  dict({
+                    'Fn::Join': list([
+                      '',
+                      list([
+                        'arn:',
+                        dict({
+                          'Ref': 'AWS::Partition',
+                        }),
+                        ':bedrock:',
+                        dict({
+                          'Ref': 'AWS::Region',
+                        }),
+                        ':',
+                        dict({
+                          'Ref': 'AWS::AccountId',
+                        }),
+                        ':imported-model/*',
+                      ]),
+                    ]),
+                  }),
+                  dict({
+                    'Fn::Join': list([
+                      '',
+                      list([
+                        'arn:',
+                        dict({
+                          'Ref': 'AWS::Partition',
+                        }),
+                        ':bedrock:',
+                        dict({
+                          'Ref': 'AWS::Region',
+                        }),
+                        ':',
+                        dict({
+                          'Ref': 'AWS::AccountId',
+                        }),
+                        ':provisioned-model/*',
+                      ]),
+                    ]),
+                  }),
+                  dict({
+                    'Fn::Join': list([
+                      '',
+                      list([
+                        'arn:',
+                        dict({
+                          'Ref': 'AWS::Partition',
+                        }),
+                        ':bedrock:',
+                        dict({
+                          'Ref': 'AWS::Region',
+                        }),
+                        ':',
+                        dict({
+                          'Ref': 'AWS::AccountId',
+                        }),
+                        ':inference-profile/*',
+                      ]),
+                    ]),
+                  }),
+                  dict({
+                    'Fn::Join': list([
+                      '',
+                      list([
+                        'arn:',
+                        dict({
+                          'Ref': 'AWS::Partition',
+                        }),
+                        ':bedrock:',
+                        dict({
+                          'Ref': 'AWS::Region',
+                        }),
+                        ':',
+                        dict({
+                          'Ref': 'AWS::AccountId',
+                        }),
+                        ':application-inference-profile/*',
+                      ]),
+                    ]),
+                  }),
+                  dict({
+                    'Fn::Join': list([
+                      '',
+                      list([
+                        'arn:',
+                        dict({
+                          'Ref': 'AWS::Partition',
+                        }),
+                        ':bedrock:',
+                        dict({
+                          'Ref': 'AWS::Region',
+                        }),
+                        ':',
+                        dict({
+                          'Ref': 'AWS::AccountId',
+                        }),
+                        ':prompt-router/*',
+                      ]),
+                    ]),
+                  }),
+                ]),
+              }),
+              dict({
+                'Action': 'bedrock:ListFoundationModels',
+                'Condition': dict({
+                  'StringEquals': dict({
+                    'aws:RequestedRegion': dict({
+                      'Ref': 'AWS::Region',
+                    }),
+                  }),
+                }),
+                'Effect': 'Allow',
+                'Resource': '*',
+              }),
+              dict({
+                'Action': list([
+                  's3:GetObject*',
+                  's3:GetBucket*',
+                  's3:List*',
+                  's3:DeleteObject*',
+                  's3:PutObject',
+                  's3:PutObjectLegalHold',
+                  's3:PutObjectRetention',
+                  's3:PutObjectTagging',
+                  's3:PutObjectVersionTagging',
+                  's3:Abort*',
+                ]),
+                'Effect': 'Allow',
+                'Resource': list([
+                  dict({
+                    'Fn::GetAtt': list([
+                      'EcsConstructEcsConstructComfyUIBucketAE7FB2B1',
+                      'Arn',
+                    ]),
+                  }),
+                  dict({
+                    'Fn::Join': list([
+                      '',
+                      list([
+                        dict({
+                          'Fn::GetAtt': list([
+                            'EcsConstructEcsConstructComfyUIBucketAE7FB2B1',
+                            'Arn',
+                          ]),
+                        }),
+                        '/*',
+                      ]),
+                    ]),
+                  }),
+                ]),
+              }),
+            ]),
+            'Version': '2012-10-17',
+          }),
+          'PolicyName': 'EcsConstructEcsConstructECSTaskRoleDefaultPolicy8B0CDB3A',
+          'Roles': list([
+            dict({
+              'Ref': 'EcsConstructEcsConstructECSTaskRole42414901',
             }),
           ]),
         }),
@@ -3623,16 +4043,6 @@
                   ]),
                 }),
               }),
-              dict({
-                'Action': 'iam:PassRole',
-                'Effect': 'Allow',
-                'Resource': dict({
-                  'Fn::GetAtt': list([
-                    'FlowLogIAMRoleDCBD2EB4',
-                    'Arn',
-                  ]),
-                }),
-              }),
             ]),
             'Version': '2012-10-17',
           }),
@@ -3724,80 +4134,6 @@
           ]),
         }),
         'Type': 'AWS::ElasticLoadBalancingV2::TargetGroup',
-      }),
-      'LambdaExecutionRoleD5C26073': dict({
-        'Properties': dict({
-          'AssumeRolePolicyDocument': dict({
-            'Statement': list([
-              dict({
-                'Action': 'sts:AssumeRole',
-                'Effect': 'Allow',
-                'Principal': dict({
-                  'Service': 'lambda.amazonaws.com',
-                }),
-              }),
-            ]),
-            'Version': '2012-10-17',
-          }),
-          'ManagedPolicyArns': list([
-            dict({
-              'Fn::Join': list([
-                '',
-                list([
-                  'arn:',
-                  dict({
-                    'Ref': 'AWS::Partition',
-                  }),
-                  ':iam::aws:policy/service-role/AWSLambdaBasicExecutionRole',
-                ]),
-              ]),
-            }),
-            dict({
-              'Fn::Join': list([
-                '',
-                list([
-                  'arn:',
-                  dict({
-                    'Ref': 'AWS::Partition',
-                  }),
-                  ':iam::aws:policy/AutoScalingFullAccess',
-                ]),
-              ]),
-            }),
-          ]),
-        }),
-        'Type': 'AWS::IAM::Role',
-      }),
-      'LambdaExecutionRoleDefaultPolicy6D69732F': dict({
-        'Properties': dict({
-          'PolicyDocument': dict({
-            'Statement': list([
-              dict({
-                'Action': list([
-                  'ecs:DescribeServices',
-                  'ecs:ListTasks',
-                  'ecs:ListServices',
-                  'elasticloadbalancing:ModifyListener',
-                  'elasticloadbalancing:ModifyRule',
-                  'elasticloadbalancing:DescribeRules',
-                  'elasticloadbalancing:DescribeListeners',
-                  'ecs:UpdateService',
-                  'ssm:SendCommand',
-                ]),
-                'Effect': 'Allow',
-                'Resource': '*',
-              }),
-            ]),
-            'Version': '2012-10-17',
-          }),
-          'PolicyName': 'LambdaExecutionRoleDefaultPolicy6D69732F',
-          'Roles': list([
-            dict({
-              'Ref': 'LambdaExecutionRoleD5C26073',
-            }),
-          ]),
-        }),
-        'Type': 'AWS::IAM::Policy',
       }),
       'LambdaRestartDockerRuleF0241A62': dict({
         'Properties': dict({
@@ -4067,7 +4403,7 @@
         'Properties': dict({
           'Code': dict({
             'S3Bucket': 'cdk-hnb659fds-assets-123456789012-us-east-1',
-            'S3Key': '5c36087592e6ef9b5acded22ed42a7dbbbb1ae5fd737b796370c9954265814d0.zip',
+            'S3Key': 'b1f87b8a55055a46b545c3b2c7c3ab9f84f2fbf0d6a9e35384e3f20e23ee64e6.zip',
           }),
           'Handler': 'function.lambda_handler',
           'Role': dict({
@@ -4086,19 +4422,69 @@
           'PolicyDocument': dict({
             'Statement': list([
               dict({
-                'Action': 'acm:ImportCertificate',
+                'Action': list([
+                  'acm:ImportCertificate',
+                  'acm:AddTagsToCertificate',
+                ]),
+                'Condition': dict({
+                  'StringEquals': dict({
+                    'aws:RequestTag/stack-id': dict({
+                      'Ref': 'AWS::StackId',
+                    }),
+                  }),
+                }),
                 'Effect': 'Allow',
-                'Resource': '*',
-              }),
-              dict({
-                'Action': 'acm:AddTagsToCertificate',
-                'Effect': 'Allow',
-                'Resource': '*',
+                'Resource': dict({
+                  'Fn::Join': list([
+                    '',
+                    list([
+                      'arn:',
+                      dict({
+                        'Ref': 'AWS::Partition',
+                      }),
+                      ':acm:',
+                      dict({
+                        'Ref': 'AWS::Region',
+                      }),
+                      ':',
+                      dict({
+                        'Ref': 'AWS::AccountId',
+                      }),
+                      ':certificate/*',
+                    ]),
+                  ]),
+                }),
               }),
               dict({
                 'Action': 'acm:DeleteCertificate',
+                'Condition': dict({
+                  'StringEquals': dict({
+                    'aws:ResourceTag/stack-id': dict({
+                      'Ref': 'AWS::StackId',
+                    }),
+                  }),
+                }),
                 'Effect': 'Allow',
-                'Resource': '*',
+                'Resource': dict({
+                  'Fn::Join': list([
+                    '',
+                    list([
+                      'arn:',
+                      dict({
+                        'Ref': 'AWS::Partition',
+                      }),
+                      ':acm:',
+                      dict({
+                        'Ref': 'AWS::Region',
+                      }),
+                      ':',
+                      dict({
+                        'Ref': 'AWS::AccountId',
+                      }),
+                      ':certificate/*',
+                    ]),
+                  ]),
+                }),
               }),
             ]),
             'Version': '2012-10-17',
@@ -4145,13 +4531,13 @@
       }),
       'RestartDockerFunction50FE1A3D': dict({
         'DependsOn': list([
-          'LambdaExecutionRoleDefaultPolicy6D69732F',
-          'LambdaExecutionRoleD5C26073',
+          'RestartDockerFunctionServiceRoleDefaultPolicy0DEAF63A',
+          'RestartDockerFunctionServiceRoleA448AF4E',
         ]),
         'Properties': dict({
           'Code': dict({
             'S3Bucket': 'cdk-hnb659fds-assets-123456789012-us-east-1',
-            'S3Key': '25eaca20d5feab25be1f3c1d4add4c2b04280aed06976811040aa9a98a82ba0d.zip',
+            'S3Key': '3c59eada85efca1709fc61a5ec8886739d4d5b2c2d6514c30f9485e4fab4d996.zip',
           }),
           'Environment': dict({
             'Variables': dict({
@@ -4175,7 +4561,7 @@
           'Handler': 'restart_docker.handler',
           'Role': dict({
             'Fn::GetAtt': list([
-              'LambdaExecutionRoleD5C26073',
+              'RestartDockerFunctionServiceRoleA448AF4E',
               'Arn',
             ]),
           }),
@@ -4196,6 +4582,130 @@
           'Principal': 'elasticloadbalancing.amazonaws.com',
         }),
         'Type': 'AWS::Lambda::Permission',
+      }),
+      'RestartDockerFunctionServiceRoleA448AF4E': dict({
+        'Properties': dict({
+          'AssumeRolePolicyDocument': dict({
+            'Statement': list([
+              dict({
+                'Action': 'sts:AssumeRole',
+                'Effect': 'Allow',
+                'Principal': dict({
+                  'Service': 'lambda.amazonaws.com',
+                }),
+              }),
+            ]),
+            'Version': '2012-10-17',
+          }),
+          'ManagedPolicyArns': list([
+            dict({
+              'Fn::Join': list([
+                '',
+                list([
+                  'arn:',
+                  dict({
+                    'Ref': 'AWS::Partition',
+                  }),
+                  ':iam::aws:policy/service-role/AWSLambdaBasicExecutionRole',
+                ]),
+              ]),
+            }),
+          ]),
+        }),
+        'Type': 'AWS::IAM::Role',
+      }),
+      'RestartDockerFunctionServiceRoleDefaultPolicy0DEAF63A': dict({
+        'Properties': dict({
+          'PolicyDocument': dict({
+            'Statement': list([
+              dict({
+                'Action': 'autoscaling:DescribeAutoScalingGroups',
+                'Condition': dict({
+                  'StringEquals': dict({
+                    'aws:RequestedRegion': dict({
+                      'Ref': 'AWS::Region',
+                    }),
+                  }),
+                }),
+                'Effect': 'Allow',
+                'Resource': '*',
+              }),
+              dict({
+                'Action': 'ecs:DescribeServices',
+                'Effect': 'Allow',
+                'Resource': dict({
+                  'Ref': 'EcsConstructEcsConstructComfyUIService0E4FAFD1',
+                }),
+              }),
+              dict({
+                'Action': 'ssm:SendCommand',
+                'Effect': 'Allow',
+                'Resource': dict({
+                  'Fn::Join': list([
+                    '',
+                    list([
+                      'arn:',
+                      dict({
+                        'Ref': 'AWS::Partition',
+                      }),
+                      ':ssm:',
+                      dict({
+                        'Ref': 'AWS::Region',
+                      }),
+                      '::document/AWS-RunShellScript',
+                    ]),
+                  ]),
+                }),
+              }),
+              dict({
+                'Action': 'ssm:SendCommand',
+                'Condition': dict({
+                  'StringEquals': dict({
+                    'ssm:resourceTag/aws:autoscaling:groupName': dict({
+                      'Ref': 'ComfyUIAsgASG6C9B9A45',
+                    }),
+                  }),
+                }),
+                'Effect': 'Allow',
+                'Resource': dict({
+                  'Fn::Join': list([
+                    '',
+                    list([
+                      'arn:',
+                      dict({
+                        'Ref': 'AWS::Partition',
+                      }),
+                      ':ec2:',
+                      dict({
+                        'Ref': 'AWS::Region',
+                      }),
+                      ':',
+                      dict({
+                        'Ref': 'AWS::AccountId',
+                      }),
+                      ':instance/*',
+                    ]),
+                  ]),
+                }),
+              }),
+              dict({
+                'Action': 'elasticloadbalancing:ModifyRule',
+                'Effect': 'Allow',
+                'Resource': dict({
+                  'Ref': 'LambdaAdminRule2186D2D2',
+                }),
+              }),
+            ]),
+            'Version': '2012-10-17',
+          }),
+          'PolicyName': 'RestartDockerFunctionServiceRoleDefaultPolicy0DEAF63A',
+          'Roles': list([
+            dict({
+              'Ref': 'RestartDockerFunctionServiceRoleA448AF4E',
+            }),
+          ]),
+        }),
+        'Type': 'AWS::IAM::Policy',
       }),
       'ScaleInEventRuleAllowEventRuleComfyUIStackScaleinListenerFunction5A6C25A0D2D8697D': dict({
         'Properties': dict({
@@ -4250,13 +4760,13 @@
       }),
       'ScaleUpTriggerFunctionC747933E': dict({
         'DependsOn': list([
-          'LambdaExecutionRoleDefaultPolicy6D69732F',
-          'LambdaExecutionRoleD5C26073',
+          'ScaleUpTriggerFunctionServiceRoleDefaultPolicy7070F3FE',
+          'ScaleUpTriggerFunctionServiceRoleDA38918D',
         ]),
         'Properties': dict({
           'Code': dict({
             'S3Bucket': 'cdk-hnb659fds-assets-123456789012-us-east-1',
-            'S3Key': '25eaca20d5feab25be1f3c1d4add4c2b04280aed06976811040aa9a98a82ba0d.zip',
+            'S3Key': '3c59eada85efca1709fc61a5ec8886739d4d5b2c2d6514c30f9485e4fab4d996.zip',
           }),
           'Environment': dict({
             'Variables': dict({
@@ -4277,7 +4787,7 @@
           'Handler': 'scaleup_trigger.handler',
           'Role': dict({
             'Fn::GetAtt': list([
-              'LambdaExecutionRoleD5C26073',
+              'ScaleUpTriggerFunctionServiceRoleDA38918D',
               'Arn',
             ]),
           }),
@@ -4299,15 +4809,107 @@
         }),
         'Type': 'AWS::Lambda::Permission',
       }),
+      'ScaleUpTriggerFunctionServiceRoleDA38918D': dict({
+        'Properties': dict({
+          'AssumeRolePolicyDocument': dict({
+            'Statement': list([
+              dict({
+                'Action': 'sts:AssumeRole',
+                'Effect': 'Allow',
+                'Principal': dict({
+                  'Service': 'lambda.amazonaws.com',
+                }),
+              }),
+            ]),
+            'Version': '2012-10-17',
+          }),
+          'ManagedPolicyArns': list([
+            dict({
+              'Fn::Join': list([
+                '',
+                list([
+                  'arn:',
+                  dict({
+                    'Ref': 'AWS::Partition',
+                  }),
+                  ':iam::aws:policy/service-role/AWSLambdaBasicExecutionRole',
+                ]),
+              ]),
+            }),
+          ]),
+        }),
+        'Type': 'AWS::IAM::Role',
+      }),
+      'ScaleUpTriggerFunctionServiceRoleDefaultPolicy7070F3FE': dict({
+        'Properties': dict({
+          'PolicyDocument': dict({
+            'Statement': list([
+              dict({
+                'Action': 'autoscaling:DescribeAutoScalingGroups',
+                'Condition': dict({
+                  'StringEquals': dict({
+                    'aws:RequestedRegion': dict({
+                      'Ref': 'AWS::Region',
+                    }),
+                  }),
+                }),
+                'Effect': 'Allow',
+                'Resource': '*',
+              }),
+              dict({
+                'Action': 'autoscaling:SetDesiredCapacity',
+                'Effect': 'Allow',
+                'Resource': dict({
+                  'Fn::Join': list([
+                    '',
+                    list([
+                      'arn:',
+                      dict({
+                        'Ref': 'AWS::Partition',
+                      }),
+                      ':autoscaling:us-east-1:123456789012:autoScalingGroup:*:autoScalingGroupName/',
+                      dict({
+                        'Ref': 'ComfyUIAsgASG6C9B9A45',
+                      }),
+                    ]),
+                  ]),
+                }),
+              }),
+              dict({
+                'Action': 'ecs:DescribeServices',
+                'Effect': 'Allow',
+                'Resource': dict({
+                  'Ref': 'EcsConstructEcsConstructComfyUIService0E4FAFD1',
+                }),
+              }),
+              dict({
+                'Action': 'ecs:UpdateService',
+                'Effect': 'Allow',
+                'Resource': dict({
+                  'Ref': 'EcsConstructEcsConstructComfyUIService0E4FAFD1',
+                }),
+              }),
+            ]),
+            'Version': '2012-10-17',
+          }),
+          'PolicyName': 'ScaleUpTriggerFunctionServiceRoleDefaultPolicy7070F3FE',
+          'Roles': list([
+            dict({
+              'Ref': 'ScaleUpTriggerFunctionServiceRoleDA38918D',
+            }),
+          ]),
+        }),
+        'Type': 'AWS::IAM::Policy',
+      }),
       'ScaleinListenerFunctionB94F3139': dict({
         'DependsOn': list([
-          'LambdaExecutionRoleDefaultPolicy6D69732F',
-          'LambdaExecutionRoleD5C26073',
+          'ScaleinListenerFunctionServiceRoleDefaultPolicy8D8B4CEA',
+          'ScaleinListenerFunctionServiceRole25DFD3F0',
         ]),
         'Properties': dict({
           'Code': dict({
             'S3Bucket': 'cdk-hnb659fds-assets-123456789012-us-east-1',
-            'S3Key': '25eaca20d5feab25be1f3c1d4add4c2b04280aed06976811040aa9a98a82ba0d.zip',
+            'S3Key': '3c59eada85efca1709fc61a5ec8886739d4d5b2c2d6514c30f9485e4fab4d996.zip',
           }),
           'Environment': dict({
             'Variables': dict({
@@ -4331,7 +4933,7 @@
           'Handler': 'scalein_listener.handler',
           'Role': dict({
             'Fn::GetAtt': list([
-              'LambdaExecutionRoleD5C26073',
+              'ScaleinListenerFunctionServiceRole25DFD3F0',
               'Arn',
             ]),
           }),
@@ -4340,15 +4942,88 @@
         }),
         'Type': 'AWS::Lambda::Function',
       }),
+      'ScaleinListenerFunctionServiceRole25DFD3F0': dict({
+        'Properties': dict({
+          'AssumeRolePolicyDocument': dict({
+            'Statement': list([
+              dict({
+                'Action': 'sts:AssumeRole',
+                'Effect': 'Allow',
+                'Principal': dict({
+                  'Service': 'lambda.amazonaws.com',
+                }),
+              }),
+            ]),
+            'Version': '2012-10-17',
+          }),
+          'ManagedPolicyArns': list([
+            dict({
+              'Fn::Join': list([
+                '',
+                list([
+                  'arn:',
+                  dict({
+                    'Ref': 'AWS::Partition',
+                  }),
+                  ':iam::aws:policy/service-role/AWSLambdaBasicExecutionRole',
+                ]),
+              ]),
+            }),
+          ]),
+        }),
+        'Type': 'AWS::IAM::Role',
+      }),
+      'ScaleinListenerFunctionServiceRoleDefaultPolicy8D8B4CEA': dict({
+        'Properties': dict({
+          'PolicyDocument': dict({
+            'Statement': list([
+              dict({
+                'Action': 'autoscaling:DescribeAutoScalingGroups',
+                'Condition': dict({
+                  'StringEquals': dict({
+                    'aws:RequestedRegion': dict({
+                      'Ref': 'AWS::Region',
+                    }),
+                  }),
+                }),
+                'Effect': 'Allow',
+                'Resource': '*',
+              }),
+              dict({
+                'Action': 'ecs:DescribeServices',
+                'Effect': 'Allow',
+                'Resource': dict({
+                  'Ref': 'EcsConstructEcsConstructComfyUIService0E4FAFD1',
+                }),
+              }),
+              dict({
+                'Action': 'elasticloadbalancing:ModifyRule',
+                'Effect': 'Allow',
+                'Resource': dict({
+                  'Ref': 'LambdaAdminRule2186D2D2',
+                }),
+              }),
+            ]),
+            'Version': '2012-10-17',
+          }),
+          'PolicyName': 'ScaleinListenerFunctionServiceRoleDefaultPolicy8D8B4CEA',
+          'Roles': list([
+            dict({
+              'Ref': 'ScaleinListenerFunctionServiceRole25DFD3F0',
+            }),
+          ]),
+        }),
+        'Type': 'AWS::IAM::Policy',
+      }),
       'ScaleupListenerFunction84164729': dict({
         'DependsOn': list([
-          'LambdaExecutionRoleDefaultPolicy6D69732F',
-          'LambdaExecutionRoleD5C26073',
+          'ScaleupListenerFunctionServiceRoleDefaultPolicy9B035644',
+          'ScaleupListenerFunctionServiceRoleCCD400ED',
         ]),
         'Properties': dict({
           'Code': dict({
             'S3Bucket': 'cdk-hnb659fds-assets-123456789012-us-east-1',
-            'S3Key': '25eaca20d5feab25be1f3c1d4add4c2b04280aed06976811040aa9a98a82ba0d.zip',
+            'S3Key': '3c59eada85efca1709fc61a5ec8886739d4d5b2c2d6514c30f9485e4fab4d996.zip',
           }),
           'Environment': dict({
             'Variables': dict({
@@ -4372,7 +5047,7 @@
           'Handler': 'scaleup_listener.handler',
           'Role': dict({
             'Fn::GetAtt': list([
-              'LambdaExecutionRoleD5C26073',
+              'ScaleupListenerFunctionServiceRoleCCD400ED',
               'Arn',
             ]),
           }),
@@ -4380,6 +5055,79 @@
           'Timeout': 60,
         }),
         'Type': 'AWS::Lambda::Function',
+      }),
+      'ScaleupListenerFunctionServiceRoleCCD400ED': dict({
+        'Properties': dict({
+          'AssumeRolePolicyDocument': dict({
+            'Statement': list([
+              dict({
+                'Action': 'sts:AssumeRole',
+                'Effect': 'Allow',
+                'Principal': dict({
+                  'Service': 'lambda.amazonaws.com',
+                }),
+              }),
+            ]),
+            'Version': '2012-10-17',
+          }),
+          'ManagedPolicyArns': list([
+            dict({
+              'Fn::Join': list([
+                '',
+                list([
+                  'arn:',
+                  dict({
+                    'Ref': 'AWS::Partition',
+                  }),
+                  ':iam::aws:policy/service-role/AWSLambdaBasicExecutionRole',
+                ]),
+              ]),
+            }),
+          ]),
+        }),
+        'Type': 'AWS::IAM::Role',
+      }),
+      'ScaleupListenerFunctionServiceRoleDefaultPolicy9B035644': dict({
+        'Properties': dict({
+          'PolicyDocument': dict({
+            'Statement': list([
+              dict({
+                'Action': 'autoscaling:DescribeAutoScalingGroups',
+                'Condition': dict({
+                  'StringEquals': dict({
+                    'aws:RequestedRegion': dict({
+                      'Ref': 'AWS::Region',
+                    }),
+                  }),
+                }),
+                'Effect': 'Allow',
+                'Resource': '*',
+              }),
+              dict({
+                'Action': 'ecs:DescribeServices',
+                'Effect': 'Allow',
+                'Resource': dict({
+                  'Ref': 'EcsConstructEcsConstructComfyUIService0E4FAFD1',
+                }),
+              }),
+              dict({
+                'Action': 'elasticloadbalancing:ModifyRule',
+                'Effect': 'Allow',
+                'Resource': dict({
+                  'Ref': 'LambdaAdminRule2186D2D2',
+                }),
+              }),
+            ]),
+            'Version': '2012-10-17',
+          }),
+          'PolicyName': 'ScaleupListenerFunctionServiceRoleDefaultPolicy9B035644',
+          'Roles': list([
+            dict({
+              'Ref': 'ScaleupListenerFunctionServiceRoleCCD400ED',
+            }),
+          ]),
+        }),
+        'Type': 'AWS::IAM::Policy',
       }),
       'SelfSignedCertCustomResource': dict({
         'DeletionPolicy': 'Delete',
@@ -4410,7 +5158,7 @@
         'Properties': dict({
           'Code': dict({
             'S3Bucket': 'cdk-hnb659fds-assets-123456789012-us-east-1',
-            'S3Key': 'bdc104ed9cab1b5b6421713c8155f0b753380595356f710400609664d3635eca.zip',
+            'S3Key': '07a90cc3efdfc34da22208dcd9d211f06f5b0e01b21e778edc7c3966b1f61d57.zip',
           }),
           'Description': 'AWS CDK resource provider framework - onEvent (ComfyUIStack/SelfSignedCertCustomResourceProvider)',
           'Environment': dict({
@@ -4424,13 +5172,17 @@
             }),
           }),
           'Handler': 'framework.onEvent',
+          'LoggingConfig': dict({
+            'ApplicationLogLevel': 'FATAL',
+            'LogFormat': 'JSON',
+          }),
           'Role': dict({
             'Fn::GetAtt': list([
               'SelfSignedCertCustomResourceProviderframeworkonEventServiceRole18595294',
               'Arn',
             ]),
           }),
-          'Runtime': 'nodejs20.x',
+          'Runtime': 'nodejs22.x',
           'Timeout': 900,
         }),
         'Type': 'AWS::Lambda::Function',
@@ -4520,13 +5272,13 @@
       }),
       'ShutdownFunction1A1D8464': dict({
         'DependsOn': list([
-          'LambdaExecutionRoleDefaultPolicy6D69732F',
-          'LambdaExecutionRoleD5C26073',
+          'ShutdownFunctionServiceRoleDefaultPolicy14A8CA12',
+          'ShutdownFunctionServiceRole611B3539',
         ]),
         'Properties': dict({
           'Code': dict({
             'S3Bucket': 'cdk-hnb659fds-assets-123456789012-us-east-1',
-            'S3Key': '25eaca20d5feab25be1f3c1d4add4c2b04280aed06976811040aa9a98a82ba0d.zip',
+            'S3Key': '3c59eada85efca1709fc61a5ec8886739d4d5b2c2d6514c30f9485e4fab4d996.zip',
           }),
           'Environment': dict({
             'Variables': dict({
@@ -4541,7 +5293,7 @@
           'Handler': 'shutdown.handler',
           'Role': dict({
             'Fn::GetAtt': list([
-              'LambdaExecutionRoleD5C26073',
+              'ShutdownFunctionServiceRole611B3539',
               'Arn',
             ]),
           }),
@@ -4563,15 +5315,92 @@
         }),
         'Type': 'AWS::Lambda::Permission',
       }),
+      'ShutdownFunctionServiceRole611B3539': dict({
+        'Properties': dict({
+          'AssumeRolePolicyDocument': dict({
+            'Statement': list([
+              dict({
+                'Action': 'sts:AssumeRole',
+                'Effect': 'Allow',
+                'Principal': dict({
+                  'Service': 'lambda.amazonaws.com',
+                }),
+              }),
+            ]),
+            'Version': '2012-10-17',
+          }),
+          'ManagedPolicyArns': list([
+            dict({
+              'Fn::Join': list([
+                '',
+                list([
+                  'arn:',
+                  dict({
+                    'Ref': 'AWS::Partition',
+                  }),
+                  ':iam::aws:policy/service-role/AWSLambdaBasicExecutionRole',
+                ]),
+              ]),
+            }),
+          ]),
+        }),
+        'Type': 'AWS::IAM::Role',
+      }),
+      'ShutdownFunctionServiceRoleDefaultPolicy14A8CA12': dict({
+        'Properties': dict({
+          'PolicyDocument': dict({
+            'Statement': list([
+              dict({
+                'Action': 'autoscaling:DescribeAutoScalingGroups',
+                'Condition': dict({
+                  'StringEquals': dict({
+                    'aws:RequestedRegion': dict({
+                      'Ref': 'AWS::Region',
+                    }),
+                  }),
+                }),
+                'Effect': 'Allow',
+                'Resource': '*',
+              }),
+              dict({
+                'Action': 'autoscaling:SetDesiredCapacity',
+                'Effect': 'Allow',
+                'Resource': dict({
+                  'Fn::Join': list([
+                    '',
+                    list([
+                      'arn:',
+                      dict({
+                        'Ref': 'AWS::Partition',
+                      }),
+                      ':autoscaling:us-east-1:123456789012:autoScalingGroup:*:autoScalingGroupName/',
+                      dict({
+                        'Ref': 'ComfyUIAsgASG6C9B9A45',
+                      }),
+                    ]),
+                  ]),
+                }),
+              }),
+            ]),
+            'Version': '2012-10-17',
+          }),
+          'PolicyName': 'ShutdownFunctionServiceRoleDefaultPolicy14A8CA12',
+          'Roles': list([
+            dict({
+              'Ref': 'ShutdownFunctionServiceRole611B3539',
+            }),
+          ]),
+        }),
+        'Type': 'AWS::IAM::Policy',
+      }),
       'SignoutFunctionD27E8708': dict({
         'DependsOn': list([
-          'LambdaExecutionRoleDefaultPolicy6D69732F',
-          'LambdaExecutionRoleD5C26073',
+          'SignoutFunctionServiceRole49B3F12A',
         ]),
         'Properties': dict({
           'Code': dict({
             'S3Bucket': 'cdk-hnb659fds-assets-123456789012-us-east-1',
-            'S3Key': '25eaca20d5feab25be1f3c1d4add4c2b04280aed06976811040aa9a98a82ba0d.zip',
+            'S3Key': '3c59eada85efca1709fc61a5ec8886739d4d5b2c2d6514c30f9485e4fab4d996.zip',
           }),
           'Environment': dict({
             'Variables': dict({
@@ -4596,7 +5425,7 @@
           'Handler': 'signout.handler',
           'Role': dict({
             'Fn::GetAtt': list([
-              'LambdaExecutionRoleD5C26073',
+              'SignoutFunctionServiceRole49B3F12A',
               'Arn',
             ]),
           }),
@@ -4617,6 +5446,37 @@
           'Principal': 'elasticloadbalancing.amazonaws.com',
         }),
         'Type': 'AWS::Lambda::Permission',
+      }),
+      'SignoutFunctionServiceRole49B3F12A': dict({
+        'Properties': dict({
+          'AssumeRolePolicyDocument': dict({
+            'Statement': list([
+              dict({
+                'Action': 'sts:AssumeRole',
+                'Effect': 'Allow',
+                'Principal': dict({
+                  'Service': 'lambda.amazonaws.com',
+                }),
+              }),
+            ]),
+            'Version': '2012-10-17',
+          }),
+          'ManagedPolicyArns': list([
+            dict({
+              'Fn::Join': list([
+                '',
+                list([
+                  'arn:',
+                  dict({
+                    'Ref': 'AWS::Partition',
+                  }),
+                  ':iam::aws:policy/service-role/AWSLambdaBasicExecutionRole',
+                ]),
+              ]),
+            }),
+          ]),
+        }),
+        'Type': 'AWS::IAM::Role',
       }),
       'UpdateCognitoCallbackUrl': dict({
         'DeletionPolicy': 'Delete',
@@ -4639,7 +5499,7 @@
         'Properties': dict({
           'Code': dict({
             'S3Bucket': 'cdk-hnb659fds-assets-123456789012-us-east-1',
-            'S3Key': 'ad389d1f9e1a2476ee176568349afc1f525219f7cea4842c50fbad43cae7acd2.zip',
+            'S3Key': '4a9be0e2d2739727c46b0b641340c12bc00db95b662ebef25eca41077043af18.zip',
           }),
           'Environment': dict({
             'Variables': dict({
@@ -4703,7 +5563,12 @@
                   'cognito-idp:UpdateUserPoolClient',
                 ]),
                 'Effect': 'Allow',
-                'Resource': '*',
+                'Resource': dict({
+                  'Fn::GetAtt': list([
+                    'ComfyUIuserPool52D4ADA1',
+                    'Arn',
+                  ]),
+                }),
               }),
             ]),
             'Version': '2012-10-17',
@@ -4725,7 +5590,7 @@
         'Properties': dict({
           'Code': dict({
             'S3Bucket': 'cdk-hnb659fds-assets-123456789012-us-east-1',
-            'S3Key': 'bdc104ed9cab1b5b6421713c8155f0b753380595356f710400609664d3635eca.zip',
+            'S3Key': '07a90cc3efdfc34da22208dcd9d211f06f5b0e01b21e778edc7c3966b1f61d57.zip',
           }),
           'Description': 'AWS CDK resource provider framework - onEvent (ComfyUIStack/UpdateCognitoCallbackUrlProvider)',
           'Environment': dict({
@@ -4739,13 +5604,17 @@
             }),
           }),
           'Handler': 'framework.onEvent',
+          'LoggingConfig': dict({
+            'ApplicationLogLevel': 'FATAL',
+            'LogFormat': 'JSON',
+          }),
           'Role': dict({
             'Fn::GetAtt': list([
               'UpdateCognitoCallbackUrlProviderframeworkonEventServiceRoleF4137345',
               'Arn',
             ]),
           }),
-          'Runtime': 'nodejs20.x',
+          'Runtime': 'nodejs22.x',
           'Timeout': 900,
         }),
         'Type': 'AWS::Lambda::Function',

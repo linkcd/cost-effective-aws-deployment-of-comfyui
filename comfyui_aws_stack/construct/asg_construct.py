@@ -9,8 +9,10 @@ from aws_cdk import (
     aws_events as events,
     aws_events_targets as events_targets,
     aws_lambda as lambda_,
+    Aws,
     Duration,
     RemovalPolicy,
+    Tags,
 )
 from constructs import Construct
 from cdk_nag import NagSuppressions
@@ -70,30 +72,68 @@ class AsgConstruct(Construct):
             assumed_by=iam.ServicePrincipal("ec2.amazonaws.com"),
             managed_policies=[
                 iam.ManagedPolicy.from_aws_managed_policy_name(
-                    "AmazonEC2FullAccess"),  # check if less privilege can be given
-                iam.ManagedPolicy.from_aws_managed_policy_name(
                     "AmazonSSMManagedInstanceCore"),
             ]
         )
 
-        # Attach an inline policy equivalent to AmazonEC2ContainerServiceforEC2Role
+        volume_resource = (
+            f"arn:{Aws.PARTITION}:ec2:{Aws.REGION}:"
+            f"{Aws.ACCOUNT_ID}:volume/*"
+        )
+        snapshot_resource = (
+            f"arn:{Aws.PARTITION}:ec2:{Aws.REGION}:"
+            f"{Aws.ACCOUNT_ID}:snapshot/*"
+        )
+        instance_resource = (
+            f"arn:{Aws.PARTITION}:ec2:{Aws.REGION}:"
+            f"{Aws.ACCOUNT_ID}:instance/*"
+        )
+
+        # REX-Ray documents these EBS discovery calls as required. The
+        # list-style EC2 Describe APIs do not support resource ARNs or
+        # resource-tag conditions, so restrict them to the deployment Region.
         ec2_role.add_to_policy(iam.PolicyStatement(
             actions=[
-                "ecs:RegisterContainerInstance",
-                "ecs:DeregisterContainerInstance",
-                "ecs:DiscoverPollEndpoint",
-                "ecs:Submit*",
-                "ecs:Poll",
-                "ecs:StartTelemetrySession",
-                "ecr:GetAuthorizationToken",
-                "ecr:BatchCheckLayerAvailability",
-                "ecr:GetDownloadUrlForLayer",
-                "ecr:BatchGetImage",
-                "logs:CreateLogStream",
-                "logs:PutLogEvents",
+                "ec2:DescribeAvailabilityZones",
+                "ec2:DescribeInstances",
+                "ec2:DescribeSnapshots",
+                "ec2:DescribeTags",
+                "ec2:DescribeVolumes",
+                "ec2:DescribeVolumesModifications",
+                "ec2:DescribeVolumeStatus",
             ],
-            resources=["*"]
-        ))        
+            resources=["*"],
+            conditions={
+                "StringEquals": {
+                    "aws:RequestedRegion": Aws.REGION,
+                },
+            },
+        ))
+        ec2_role.add_to_policy(iam.PolicyStatement(
+            actions=["ec2:DescribeVolumeAttribute"],
+            resources=[volume_resource],
+        ))
+        ec2_role.add_to_policy(iam.PolicyStatement(
+            actions=["ec2:CreateVolume"],
+            resources=[volume_resource, snapshot_resource],
+            conditions={
+                "Bool": {
+                    "ec2:Encrypted": "true",
+                },
+                "StringEquals": {
+                    "aws:RequestedRegion": Aws.REGION,
+                },
+            },
+        ))
+        ec2_role.add_to_policy(iam.PolicyStatement(
+            actions=[
+                "ec2:CreateTags",
+                "ec2:DeleteTags",
+                "ec2:DeleteVolume",
+                "ec2:ModifyVolume",
+            ],
+            resources=[volume_resource],
+        ))
 
         user_data_script = ec2.UserData.for_linux()
         user_data_script.add_commands(
@@ -244,6 +284,36 @@ class AsgConstruct(Construct):
         )
 
         auto_scaling_group.apply_removal_policy(RemovalPolicy.DESTROY)
+        Tags.of(auto_scaling_group).add(
+            "comfyui:ebs-host",
+            "true",
+            apply_to_launched_instances=True,
+        )
+
+        # Attach and detach authorize both the EBS volume and the target
+        # instance. The REX-Ray EBS driver does not support user-defined EBS
+        # tags, so a volume-tag condition would block plugin-managed volumes.
+        # Keep the volume side account/Region scoped and require the ASG tag on
+        # the instance side.
+        ec2_role.add_to_policy(iam.PolicyStatement(
+            actions=[
+                "ec2:AttachVolume",
+                "ec2:DetachVolume",
+            ],
+            resources=[volume_resource],
+        ))
+        ec2_role.add_to_policy(iam.PolicyStatement(
+            actions=[
+                "ec2:AttachVolume",
+                "ec2:DetachVolume",
+            ],
+            resources=[instance_resource],
+            conditions={
+                "StringEquals": {
+                    "ec2:ResourceTag/comfyui:ebs-host": "true",
+                },
+            },
+        ))
 
         cpu_utilization_metric = cloudwatch.Metric(
             namespace='AWS/EC2',
@@ -339,12 +409,6 @@ class AsgConstruct(Construct):
 
             # Grant permissions to the Lambda function
             asg_events_topic.grant_publish(asg_monitor_lambda)
-            asg_monitor_lambda.add_to_role_policy(
-                iam.PolicyStatement(
-                    actions=["autoscaling:DescribeScalingActivities"],
-                    resources=["*"]
-                )
-            )
 
             # Create EventBridge rule to trigger Lambda on ASG error events
             events.Rule(

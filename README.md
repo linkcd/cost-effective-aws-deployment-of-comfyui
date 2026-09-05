@@ -41,7 +41,7 @@ This sample repository provides a seamless and cost-effective solution to deploy
 
 For the sake of reproducability and consistency, we recommend using [Amazon SageMaker Studio Code Editor](https://docs.aws.amazon.com/sagemaker/latest/dg/code-editor.html) for deploying and testing this solution.
 
-ℹ️ You can use your local development environment, but you will need to **make sure that you have Python 3.9+, Node.js 20+, AWS CLI, and AWS CDK properly setup**.
+ℹ️ You can use your local development environment, but you will need to **make sure that you have Python 3.10+, Node.js 20+, AWS CLI, and AWS CDK properly setup**.
 
 <details>
 <summary>Click to see environment setup with Amazon SageMaker Studio Code Editor</summary>
@@ -56,7 +56,7 @@ For the sake of reproducability and consistency, we recommend using [Amazon Sage
 
 The following tools are required to deploy this solution locally:
 
-- **[Python 3.9+](https://www.python.org/downloads/)** — Required for the CDK application and infrastructure code (local testing only)
+- **[Python 3.10+](https://www.python.org/downloads/)** — Required for the CDK application and infrastructure code (local testing only)
 - **[Node.js 20.x or later](https://nodejs.org/)** — Required for AWS CDK CLI (`npx cdk`) (local testing only)
 - **[AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html)** — For AWS account authentication and resource management
 - **[GNU Make](https://www.gnu.org/software/make/)** — Used for build automation (pre-installed on macOS/Linux; on Windows use WSL or install via chocolatey)
@@ -85,7 +85,7 @@ When prompted, enter your AWS Access Key ID, Secret Access Key, and then the def
 
 1. (First time only) Clone this repo (`git clone https://github.com/aws-samples/cost-effective-aws-deployment-of-comfyui.git`)
 2. (First time only) cd into repo directory (`cd cost-effective-aws-deployment-of-comfyui`)
-3. (First time only) Run `make setup` — creates the CodeBuild CI/CD pipeline (no Docker required)
+3. (First time only) Run `make setup` — bootstraps CDK and creates the CodeBuild CI/CD pipeline (no Docker required)
 4. Run `make` — deploys everything via CodeBuild in AWS
 
 Set your target region before deploying:
@@ -99,7 +99,7 @@ No local Docker or Finch is needed. All builds run in CodeBuild.
 
 | Command | What it does |
 |---------|-------------|
-| `make setup` | One-time: create CodeBuild infrastructure |
+| `make setup` | One-time: bootstrap CDK and create CodeBuild infrastructure |
 | `make` | Deploy via CodeBuild (runs in AWS) |
 | `make status` | Check latest build status |
 | `make logs` | Print last 40 lines of build logs |
@@ -507,7 +507,7 @@ The following assumptions are made for the cost estimation:
 
 ### Useful Commands
 
-* `make setup`            one-time: create CodeBuild CI/CD pipeline
+* `make setup`            one-time: bootstrap CDK and create CodeBuild CI/CD pipeline
 * `make`                  deploy via CodeBuild (runs in AWS)
 * `make status`           check latest build status
 * `make logs`             print last 40 lines of build logs
@@ -608,7 +608,7 @@ All parameters are set in `app.py` when instantiating `ComfyUIStack`. See [Deplo
 | `schedule_scale_down` | `"0 18 * * *"` | Cron for scale-down (default: 6 PM daily) |
 | `self_sign_up_enabled` | `False` | Allow users to self-register via Cognito |
 | `allowed_sign_up_email_domains` | `None` | Restrict sign-up to specific email domains |
-| `mfa_required` | `False` | Require MFA for Cognito users |
+| `mfa_required` | `True` | Require MFA for Cognito users |
 | `saml_auth_enabled` | `False` | Enable SAML SSO (disables Cognito user pool login) |
 | `allowed_ip_v4_address_ranges` | `None` | IPv4 CIDR allowlist for WAF |
 | `allowed_ip_v6_address_ranges` | `None` | IPv6 CIDR allowlist for WAF |
@@ -633,8 +633,8 @@ This sample deployment prioritizes cost and simplicity. The following trade-offs
 
 **Security**
 - Authentication via Amazon Cognito (user pool or SAML). Optional WAF with IP allowlisting and rate limiting.
-- IAM roles use broad managed policies (see [IAM Roles](#iam-roles-and-permissions)). Not suitable for production without scoping down.
-- EBS root volume is encrypted. The rexray-managed data volume uses gp3 but does not explicitly specify encryption — verify your account-level EBS encryption default.
+- IAM permissions are split by workload and scoped to the ASG, ECS service, listener rule, Cognito user pool, tagged certificate, and account-local EBS resources.
+- The EBS root volume and rexray-managed gp3 data volume are explicitly encrypted.
 - VPC Flow Logs are enabled. ALB access logs are not enabled; consider enabling them for auditing in regulated environments.
 - cdk-nag (AwsSolutions pack) is run during synth to surface security findings.
 
@@ -661,16 +661,18 @@ This sample deployment prioritizes cost and simplicity. The following trade-offs
 
 ### IAM Roles and Permissions
 
-This solution creates the following IAM roles. These use broad managed policies suitable for a sample deployment. For production use, scope them down to least privilege.
+This solution creates separate workload roles so that runtime components do not share deployment or administrative permissions.
 
 | Role | Service | Policies | Purpose |
 |------|---------|----------|---------|
-| EC2 Instance Role | `ec2.amazonaws.com` | `AmazonEC2FullAccess`, `AmazonSSMManagedInstanceCore` | ASG instances: EBS volume management (rexray plugin), SSM Session Manager access |
-| ECS Task Execution Role | `ecs-tasks.amazonaws.com` | `AmazonECSTaskExecutionRolePolicy` | Pull container images from ECR, write logs to CloudWatch |
-| Admin Lambda Role | `lambda.amazonaws.com` | `AWSLambdaBasicExecutionRole`, `AutoScalingFullAccess` | Scale-up/shutdown/restart operations via ALB admin panel |
-| Cert Lambda Role | `lambda.amazonaws.com` | `AWSLambdaBasicExecutionRole` + inline `acm:ImportCertificate`, `acm:AddTagsToCertificate` | Register self-signed TLS certificate with ACM |
+| EC2 Instance Role | `ec2.amazonaws.com` | `AmazonSSMManagedInstanceCore` + scoped inline policies | ECS agent access, SSM Session Manager, and encrypted EBS volume lifecycle operations required by rexray |
+| ECS Task Execution Role | `ecs-tasks.amazonaws.com` | Repository- and log-group-scoped inline policies | Pull the ComfyUI image from ECR and write its logs to CloudWatch |
+| ECS Task Role | `ecs-tasks.amazonaws.com` | Scoped S3 and Bedrock inline policies | ComfyUI application access to its S3 bucket and invokable Bedrock model resources |
+| Admin Lambda Roles | `lambda.amazonaws.com` | Function-specific inline policies | Each admin function receives only its required ASG, ECS, SSM, or listener-rule actions |
+| Cert Lambda Role | `lambda.amazonaws.com` | Stack-tag-scoped ACM inline policy | Create and delete only the self-signed certificate owned by this stack |
+| CodeBuild Service Role | `codebuild.amazonaws.com` | Source/log access and tagged CDK bootstrap role assumption | Build and deploy without attaching `AdministratorAccess` directly to CodeBuild |
 
-> ⚠️ **Security note:** `AmazonEC2FullAccess` and `AutoScalingFullAccess` are overly broad for production. For a hardened deployment, replace these with custom policies scoped to the specific resources (ASG ARN, EBS volumes in the stack's VPC, specific ECS cluster).
+AWS list and describe APIs that do not support resource ARNs retain `Resource: "*"`, with region or cluster conditions where the service supports them. Mutating actions are resource-scoped.
 
 ## Q&A
 
