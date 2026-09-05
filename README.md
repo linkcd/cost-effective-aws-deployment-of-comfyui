@@ -588,7 +588,23 @@ Manual and scheduled actions can override each other over time: for example, a m
 
 ### Configuration Reference
 
-All parameters are set in `app.py` when instantiating `ComfyUIStack`. See [Deployment Options](docs/DEPLOY_OPTION.md) for detailed examples.
+General deployment settings are set in `app.py` when instantiating
+`ComfyUIStack`. Environment-specific AWS resource identifiers are not committed
+to source. A fresh deployment should leave `COMFYUI_EBS_VOLUME_NAME` and
+`COMFYUI_SUBNET_ID` unset so CDK can select a private subnet and REX-Ray can
+create a new encrypted data volume.
+
+To reuse an existing EBS-backed deployment, provide both values when starting
+the CodeBuild deployment:
+
+```bash
+export COMFYUI_EBS_VOLUME_NAME="existing-rexray-volume-name"
+export COMFYUI_SUBNET_ID="subnet-existing"
+AWS_DEFAULT_REGION=ap-northeast-1 make deploy
+```
+
+The deployment wrapper forwards these optional values to CodeBuild. See
+[Deployment Options](docs/DEPLOY_OPTION.md) for detailed examples.
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|

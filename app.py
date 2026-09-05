@@ -6,6 +6,13 @@ from aws_cdk import Aspects
 from comfyui_aws_stack.comfyui_aws_stack import ComfyUIStack
 from cdk_nag import AwsSolutionsChecks, NagSuppressions
 
+
+def optional_environment_value(name: str):
+    """Return a non-empty deployment setting without committing resource IDs."""
+    value = os.environ.get(name, "").strip()
+    return value or None
+
+
 app = cdk.App()
 comfy_ui_stack = ComfyUIStack(
     app, "ComfyUIStack",
@@ -21,8 +28,10 @@ comfy_ui_stack = ComfyUIStack(
     auto_scale_down=False,
     enable_nvme_model_cache=True,
     comfyui_disable_pinned_memory=True,
-    comfyui_ebs_volume_name="ComfyUIVolume-8a39c00b32-20260901154923",
-    comfyui_subnet_id="subnet-0f26675ddc32e0174",
+    comfyui_ebs_volume_name=optional_environment_value(
+        "COMFYUI_EBS_VOLUME_NAME"
+    ),
+    comfyui_subnet_id=optional_environment_value("COMFYUI_SUBNET_ID"),
     self_sign_up_enabled=True,
 )
 

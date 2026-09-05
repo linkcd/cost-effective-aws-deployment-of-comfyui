@@ -58,6 +58,21 @@ upload_source() {
   echo "Done."
 }
 
+CODEBUILD_ENVIRONMENT_OVERRIDES=()
+append_codebuild_environment_override() {
+  local name="$1"
+  local value="$2"
+  if [ -n "$value" ]; then
+    CODEBUILD_ENVIRONMENT_OVERRIDES+=(
+      "name=${name},value=${value},type=PLAINTEXT"
+    )
+  fi
+}
+append_codebuild_environment_override \
+  "COMFYUI_EBS_VOLUME_NAME" "${COMFYUI_EBS_VOLUME_NAME:-}"
+append_codebuild_environment_override \
+  "COMFYUI_SUBNET_ID" "${COMFYUI_SUBNET_ID:-}"
+
 case "${1:-deploy}" in
   setup)
     CDK_CLI="$PROJECT_DIR/node_modules/.bin/cdk"
@@ -96,9 +111,17 @@ case "${1:-deploy}" in
     fi
     upload_source
     echo "Starting full deploy build..."
-    BUILD_ID=$(aws codebuild start-build \
-      --project-name "$PROJECT_NAME" \
-      --region "$REGION" \
+    START_BUILD_ARGS=(
+      --project-name "$PROJECT_NAME"
+      --region "$REGION"
+    )
+    if [ "${#CODEBUILD_ENVIRONMENT_OVERRIDES[@]}" -gt 0 ]; then
+      START_BUILD_ARGS+=(
+        --environment-variables-override
+        "${CODEBUILD_ENVIRONMENT_OVERRIDES[@]}"
+      )
+    fi
+    BUILD_ID=$(aws codebuild start-build "${START_BUILD_ARGS[@]}" \
       --query 'build.id' --output text)
     echo ""
     echo "Build: $BUILD_ID"
@@ -114,10 +137,19 @@ case "${1:-deploy}" in
     fi
     upload_source
     echo "Starting synth-only build..."
-    BUILD_ID=$(aws codebuild start-build \
-      --project-name "$PROJECT_NAME" \
-      --region "$REGION" \
-      --buildspec-override '{"version":"0.2","phases":{"install":{"runtime-versions":{"python":"3.12","nodejs":"20"},"commands":["python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt","npm install"]},"build":{"commands":["source .venv/bin/activate && npx cdk synth --quiet","echo \"PASS - Synth completed successfully\""]}}}'  \
+    START_BUILD_ARGS=(
+      --project-name "$PROJECT_NAME"
+      --region "$REGION"
+      --buildspec-override
+      '{"version":"0.2","phases":{"install":{"runtime-versions":{"python":"3.12","nodejs":"20"},"commands":["python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt","npm install"]},"build":{"commands":["source .venv/bin/activate && npx cdk synth --quiet","echo \"PASS - Synth completed successfully\""]}}}'
+    )
+    if [ "${#CODEBUILD_ENVIRONMENT_OVERRIDES[@]}" -gt 0 ]; then
+      START_BUILD_ARGS+=(
+        --environment-variables-override
+        "${CODEBUILD_ENVIRONMENT_OVERRIDES[@]}"
+      )
+    fi
+    BUILD_ID=$(aws codebuild start-build "${START_BUILD_ARGS[@]}" \
       --query 'build.id' --output text)
     echo ""
     echo "Build: $BUILD_ID"

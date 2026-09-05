@@ -1,4 +1,5 @@
 import json
+import re
 from functools import lru_cache
 from pathlib import Path
 
@@ -64,6 +65,34 @@ def test_full_access_managed_policies_are_not_used():
     )
     assert "AdministratorAccess" not in codebuild_template
     assert "cdk-hnb659fds-deploy-role" in codebuild_template
+
+
+def test_app_has_no_hardcoded_aws_resource_identifiers():
+    app_source = (ROOT / "app.py").read_text(encoding="utf-8")
+
+    assert re.search(
+        r"\b(?:subnet|vpc|sg|vol|ami)-[0-9a-f]+\b",
+        app_source,
+    ) is None
+    assert re.search(r"\b[0-9]{12}\b", app_source) is None
+    assert re.search(
+        r'optional_environment_value\(\s*"COMFYUI_EBS_VOLUME_NAME"\s*\)',
+        app_source,
+    )
+    assert re.search(
+        r'optional_environment_value\(\s*"COMFYUI_SUBNET_ID"\s*\)',
+        app_source,
+    )
+
+
+def test_codebuild_forwards_optional_existing_storage_configuration():
+    deployment_script = (
+        ROOT / "scripts" / "run_codebuild.sh"
+    ).read_text(encoding="utf-8")
+
+    assert "COMFYUI_EBS_VOLUME_NAME" in deployment_script
+    assert "COMFYUI_SUBNET_ID" in deployment_script
+    assert "--environment-variables-override" in deployment_script
 
 
 def test_slack_notifications_use_read_only_guardrail():
